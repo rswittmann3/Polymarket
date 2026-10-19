@@ -49,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("snapshot", help="store both sources in SQLite (run every 10-15 min)", epilog=LEGAL)
     _game_args(s)
     s.add_argument("--history", action="store_true", help="also pull CLOB price history")
+    s.add_argument("--scope", choices=["full", "halves", "all"], help="periods to request odds for")
+    s.add_argument("--bookmakers", help="Odds API bookmaker keys, comma-separated")
 
     e = sub.add_parser("edges", help="compare Polymarket asks with sportsbook fair values", epilog=LEGAL)
     _game_args(e)
@@ -58,8 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="allow model-converted lines to be flagged (lower confidence)")
     e.add_argument("--fee-rate", type=float,
                    help="override the Polymarket taker fee rate (fee/share = rate*p*(1-p))")
-    e.add_argument("--regions", help="Odds API regions (default us,eu; eu carries Pinnacle)")
+    e.add_argument("--bookmakers", help="Odds API bookmaker keys, comma-separated (default: 10 books "
+                   "incl. Pinnacle; 10 books cost the same as 1 region)")
+    e.add_argument("--regions", help="use Odds API regions instead of --bookmakers, e.g. us,eu")
     e.add_argument("--no-alternates", action="store_true", help="never request alternate lines")
+    e.add_argument("--scope", choices=["full", "halves", "all"],
+                   help="periods to request odds for (default all; fewer = fewer credits)")
     e.add_argument("--no-history", action="store_true", help="skip CLOB price history (drift)")
     e.add_argument("--snapshot", action="store_true", help="also store this run as a snapshot")
     e.add_argument("--kelly", action="store_true", help="show a capped quarter-Kelly stake")
@@ -80,11 +86,16 @@ def main(argv: list[str] | None = None) -> int:
         devig_method=getattr(args, "devig", None),
         fee_rate_override=getattr(args, "fee_rate", None),
         regions=getattr(args, "regions", None),
+        scope=getattr(args, "scope", None),
     )
     if getattr(args, "allow_model", False):
         cfg.allow_model = True
     if getattr(args, "no_alternates", False):
         cfg.fetch_alternates = False
+    if getattr(args, "bookmakers", None):
+        cfg.bookmakers = args.bookmakers
+    elif getattr(args, "regions", None):
+        cfg.bookmakers = None
 
     try:
         spec = GameSpec(args.league, args.away, args.home, args.date, args.kickoff, args.tz)

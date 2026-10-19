@@ -19,11 +19,16 @@ LEAGUE_SPORT_KEYS = {"nfl": "americanfootball_nfl"}
 # response; a book that is missing from the response is skipped.
 DEFAULT_BOOK_WEIGHTS: dict[str, float] = {
     "pinnacle": 3.0,
-    "circasports": 2.0,
+    "circasports": 2.0,   # not offered for NFL on the Odds API as of 2026-10
     "betonlineag": 2.0,
-    "bookmaker": 2.0,
+    "bookmaker": 2.0,     # not offered for NFL on the Odds API as of 2026-10
     "lowvig": 2.0,
 }
+# Asking for up to 10 named bookmakers costs the same as one region, half the
+# price of regions=us,eu, and still includes Pinnacle. All ten were listed for
+# NFL by the Odds API markets endpoint on 2026-10-19.
+DEFAULT_BOOKMAKERS = ("pinnacle,lowvig,betonlineag,draftkings,fanduel,betmgm,"
+                      "williamhill_us,betrivers,bovada,fanatics")
 DEFAULT_BOOK_WEIGHT = 1.0
 SHARP_BOOK = "pinnacle"
 
@@ -60,8 +65,12 @@ class Config:
     )
 
     # Odds API
+    bookmakers: str | None = DEFAULT_BOOKMAKERS   # used instead of regions when set
     regions: str = "us,eu"          # eu is where Pinnacle is listed
     fetch_alternates: bool = True
+    # Which game periods to request odds for. Each period adds market keys,
+    # and every key costs credits: full | halves (full + h1/h2) | all (+ quarters)
+    scope: str = "all"
 
     # Edge flagging
     min_edge: float = 0.03
@@ -82,6 +91,10 @@ class Config:
     timeout_s: float = 20.0
     retries: int = 3
     concurrency: int = 8
+
+    def in_scope(self, period: str) -> bool:
+        allowed = {"full": {"full"}, "halves": {"full", "h1", "h2"}}.get(self.scope)
+        return allowed is None or period in allowed
 
     def weight(self, book: str) -> float:
         return self.book_weights.get(book, self.default_book_weight)

@@ -1,6 +1,7 @@
 """The Odds API client and normalisation of its odds into BookRows.
 
-Cost reminder: an odds request costs (markets returned) x (regions) credits.
+Cost reminder: an odds request costs (markets returned) x (regions) credits;
+with `bookmakers=` each group of up to 10 books counts as one region.
 The events list is free. Remaining credits come back in the
 ``x-requests-remaining`` header and are reported after every run.
 """
@@ -24,8 +25,9 @@ KNOWN_PROP_STATS = {
     "pass_attempts", "pass_completions", "pass_interceptions", "pass_tds", "pass_yds",
     "pass_rush_yds", "receptions", "reception_yds", "reception_tds", "rush_attempts",
     "rush_reception_yds", "rush_tds", "rush_yds", "sacks", "anytime_td", "tds_over",
+    "reception_longest",
 }
-NO_ALTERNATE = {"anytime_td", "tds_over", "pass_attempts", "pass_completions", "sacks"}
+NO_ALTERNATE = {"anytime_td", "tds_over", "reception_longest"}
 
 
 def suffix(period: str) -> str:
@@ -162,8 +164,9 @@ class OddsApiClient:
         return best
 
     def event_odds(self, event_id: str, markets: Iterable[str]) -> Response:
+        where = {"bookmakers": self.cfg.bookmakers} if self.cfg.bookmakers else {"regions": self.cfg.regions}
         return self._get(f"/sports/{self.sport}/events/{event_id}/odds", {
-            "regions": self.cfg.regions,
+            **where,
             "markets": ",".join(sorted(set(markets))),
             "oddsFormat": "american",
             "dateFormat": "iso",

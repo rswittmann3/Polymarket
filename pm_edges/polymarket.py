@@ -127,9 +127,42 @@ def parse_period(text: str) -> str:
     if re.search(r"\b(2h|second half|2nd half)\b", t):
         return "h2"
     for n, words in ((1, "1st|first"), (2, "2nd|second"), (3, "3rd|third"), (4, "4th|fourth")):
-        if re.search(rf"\b(q{n}|(?:{words})[ -]quarter)\b", t):
+        if re.search(rf"\b(q{n}|{n}q|(?:{words})[ -]quarter)\b", t):
             return f"q{n}"
     return "full"
+
+
+SMT_PERIODS = {"first_half_": "h1", "second_half_": "h2", "q1_": "q1", "q2_": "q2", "q3_": "q3", "q4_": "q4"}
+# sportsMarketType bases we can price from sportsbooks (seen live: moneyline,
+# spreads, totals, team_totals, each also with a first_half_/q1_/... prefix).
+PRICEABLE_SMT = {"moneyline", "spreads", "totals", "team_totals"}
+
+
+# Player-prop sportsMarketType -> Odds API stat (player_<stat>). None = books
+# have no equivalent. Seen live on the 2026-10-20 WAS @ SF props event.
+PROP_SMT: dict[str, str | None] = {
+    "passing_yards": "pass_yds",
+    "passing_touchdowns": "pass_tds",
+    "passing_attempts": "pass_attempts",
+    "passing_completions": "pass_completions",
+    "interceptions": "pass_interceptions",
+    "rushing_yards": "rush_yds",
+    "rushing_attempts": "rush_attempts",
+    "receiving_yards": "reception_yds",
+    "receptions": "receptions",
+    "longest_reception": "reception_longest",
+    "anytime_touchdowns": "anytime_td",
+    "two_plus_touchdowns": "tds_over",
+    "team_first_touchdowns": None,
+}
+
+
+def split_smt(smt: str) -> tuple[str, str | None]:
+    """'first_half_team_totals' -> ('team_totals', 'h1')."""
+    for prefix, period in SMT_PERIODS.items():
+        if smt.startswith(prefix):
+            return smt[len(prefix):], period
+    return smt, None
 
 
 _NUM = r"\d+(?:\.\d+)?"
@@ -156,7 +189,8 @@ def classify(m: dict, home: str, away: str) -> tuple[str, list[Selection | None]
     smt = (m.get("sportsMarketType") or "").lower()
     outcomes = [str(o) for o in parse_json_list(m.get("outcomes"))]
     sides = [_side_name(o) for o in outcomes]
-    period = parse_period(f"{question} {m.get('slug', '')} {smt}")
+    base_smt, smt_period = split_smt(smt)
+    period = smt_period or parse_period(f"{question} {m.get('slug', '')} {smt}")
     line_field = to_float(m.get("line"))
     q = question.lower()
     none = [None] * len(outcomes)
@@ -165,6 +199,15 @@ def classify(m: dict, home: str, away: str) -> tuple[str, list[Selection | None]
 
     teams = [team_from_text(o) for o in outcomes]
     is_two_teams = all(teams) and teams[0] != teams[1] and set(teams) <= {home, away}
+
+    # A known non-prop sportsMarketType that books do not price (exact_margin,
+    # safety, team_touchdowns, team_offensive_yards, both_teams_to_score_points,
+    # two_point_conversions, ...). Checked first so e.g. "Commanders Total
+    # Touchdowns: O/U 2.5" is never read as a game total of 2.5.
+    if base_smt in PROP_SMT:
+        return _prop_from_smt(PROP_SMT[base_smt], smt, question, sides, period, line_field)
+    if smt and base_smt not in PRICEABLE_SMT and "player" not in smt and "prop" not in smt:
+        return ("quarter" if smt_period else "other"), none, f"no sportsbook equivalent ({smt})"
 
     # ---- player props --------------------------------------------------
     sel = _parse_prop(question, sides, period)
@@ -219,16 +262,46 @@ def classify(m: dict, home: str, away: str) -> tuple[str, list[Selection | None]
     return "other", none, "market type not recognised"
 
 
+def _prop_selections(player: str, stat: str, line: float | None, yes_side: str,
+                     sides: list[str], period: str) -> list[Selection] | None:
+    p = norm_player(player)
+    if set(sides) == {"over", "under"}:
+        return [Selection("player_prop", period, p, stat, line, s) for s in sides]
+    if set(sides) == {"yes", "no"}:
+        other = {"over": "under", "under": "over", "yes": "no"}[yes_side]
+        return [Selection("player_prop", period, p, stat, line, yes_side if s == "yes" else other)
+                for s in sides]
+    return None
+
+
+def _prop_from_smt(stat: str | None, smt: str, question: str, sides: list[str], period: str,
+                   line_field: float | None) -> tuple[str, list[Selection | None], str]:
+    none: list[Selection | None] = [None] * len(sides)
+    if stat is None:
+        return "player_prop", none, f"no sportsbook equivalent ({smt})"
+    if ":" not in question:
+        return "player_prop", none, "player name not found in question"
+    player = question.split(":", 1)[0]
+    if stat == "anytime_td":
+        line, yes_side = None, "yes"
+    elif stat == "tds_over":
+        m = re.search(r"(\d+)\+", question)
+        line, yes_side = (int(m.group(1)) - 0.5 if m else 1.5), "over"
+    else:
+        mt = TOTAL_LINE.search(question)
+        line = line_field if line_field is not None else (to_float(mt.group("line")) if mt else None)
+        yes_side = "over"
+        if line is None:
+            return "player_prop", none, "could not read prop line"
+    sels = _prop_selections(player, stat, line, yes_side, sides, period)
+    if sels is None:
+        return "player_prop", none, "prop outcomes are not Over/Under or Yes/No"
+    return "player_prop", sels, ""
+
+
 def _parse_prop(question: str, sides: list[str], period: str) -> list[Selection] | None:
     def mk(player, stat, line, yes_side):
-        p = norm_player(player)
-        if set(sides) == {"over", "under"}:
-            return [Selection("player_prop", period, p, stat, line, s) for s in sides]
-        if set(sides) == {"yes", "no"}:
-            other = {"over": "under", "under": "over", "yes": "no"}[yes_side]
-            return [Selection("player_prop", period, p, stat, line, yes_side if s == "yes" else other)
-                    for s in sides]
-        return None
+        return _prop_selections(player, stat, line, yes_side, sides, period)
 
     for rx in (PROP_TD_Q, PROP_TD_COLON):
         m = rx.match(question)

@@ -146,3 +146,16 @@ def test_every_market_has_fair_or_reason():
           for m in event_markets(load(e), GAME, "SF", "WAS")]
     for of in match_markets(ms, rows(), "SF", "WAS", Config()):
         assert of.fair.prob is not None or of.fair.reason, of.market.question
+
+
+def test_model_not_used_for_periods_or_team_totals():
+    cfg = Config()
+    rs = [row("dk", "spreads_q3", Selection("spread", "q3", line=-2.5, side="SF"), -110),
+          row("dk", "spreads_q3", Selection("spread", "q3", line=2.5, side="WAS"), -110),
+          row("dk", "team_totals", Selection("total", player="SF", stat="team_total", line=27.5, side="over"), -110),
+          row("dk", "team_totals", Selection("total", player="SF", stat="team_total", line=27.5, side="under"), -110)]
+    idx = BookIndex(rs, "SF", "WAS")
+    q = fair_for(Selection("spread", "q3", line=-7.5, side="SF"), idx, cfg)
+    assert q.prob is None and "full-game only" in q.reason
+    t = fair_for(Selection("total", player="SF", stat="team_total", line=30.5, side="over"), idx, cfg)
+    assert t.prob is None and "team totals" in t.reason

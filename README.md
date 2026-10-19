@@ -9,7 +9,7 @@ A read-only command-line tool. For one game it:
 
 It never places bets, trades or touches a wallet. **Check that using Polymarket and sportsbooks is legal where you live.**
 
-> **Status: not yet run against the live APIs.** It was built in a sandbox with no access to Polymarket or The Odds API. Everything was tested against *synthetic* fixtures shaped like the documented responses. Before you trust any output, do the first-live-run checklist below.
+> **Status:** first live run done on 2026-10-19 (WAS @ SF, about 70 minutes before kickoff). It found 494 Polymarket markets across 2 events and checked 341 liquid ones, using 48 Odds API credits. Result: "No edge found." Three markets were hand-checked against the raw responses. Real responses from that run are in `tests/fixtures/live_was_sf_2026-10-19` and are used as regression tests.
 
 ## Ground rules (built into the code)
 
@@ -62,7 +62,9 @@ Useful flags:
 | `--devig power\|multiplicative\|shin` | de-vig method (default `power`) |
 | `--allow-model` | let model-converted lines be flagged (they always show) |
 | `--fee-rate 0.05` | override the taker fee rate |
-| `--regions us,eu` | Odds API regions; `eu` is where Pinnacle is listed |
+| `--bookmakers a,b,…` | Odds API books to ask for (default: 10 books incl. Pinnacle; 10 named books cost the same as 1 region) |
+| `--regions us,eu` | use regions instead of named books (about twice the credits) |
+| `--scope full\|halves\|all` | which periods to request odds for; fewer periods cost fewer credits |
 | `--no-alternates` | never request alternate lines (saves credits) |
 | `--no-history` | skip CLOB price history |
 | `--snapshot` (edges) | also store this run as a snapshot |
@@ -71,7 +73,17 @@ Useful flags:
 
 ### Scheduling snapshots
 
-The Odds API free tier has about 500 credits a month. Each odds request costs **(markets returned) × (regions)**. A typical run makes one request for the main markets plus props, and sometimes a second for alternate lines. With 2 regions and about 8 market keys, that is roughly 16–30 credits a run. Credits remaining are printed after every run, read from the `x-requests-remaining` header. Plan the schedule around that: 8 snapshots on game day is about 150–250 credits.
+The Odds API free tier has about 500 credits a month. Each odds request costs **(markets returned) × (regions)**, where up to 10 named bookmakers count as one region. Only market keys for Polymarket markets that pass the liquidity filter are requested. Alternates are requested only for lines the main markets don't cover.
+
+Measured on the 2026-10-19 game, with Polymarket listing game, half, quarter, team-total and player-prop markets:
+
+| `--scope` | market keys | credits per run (approx.) |
+|---|---|---|
+| `all` (default) | 32 main + alternates | 48 (measured) |
+| `halves` | 20 main + alternates | ~30 |
+| `full` | 13 main + alternates | ~20 |
+
+Credits remaining are printed after every run, read from the `x-requests-remaining` header. For repeated snapshots use `--scope full` or `halves`; at 48 credits a run, 500 credits is about 10 full runs.
 
 Steam detection compares the last two snapshots and only runs when they are ≤10 min apart (`steam_window_min` in `config.py`). Schedule every 10 minutes if you want it.
 
@@ -92,11 +104,11 @@ The first snapshot of a game is treated as the "open".
 **Fair probability**
 
 1. Each book's two-way market is de-vigged. The methods are *multiplicative* (`q/Σq`), *power* (`qᵏ` with k such that the sum is 1; the default, which takes more margin off longshots) and *Shin*.
-2. The consensus is a weighted average across books. Pinnacle has weight 3. Circa, BetOnline, Bookmaker and LowVig (Odds API keys `circasports`, `betonlineag`, `bookmaker`, `lowvig`) have weight 2, if present. Everyone else has weight 1. Edit these in `config.py`.
+2. The consensus is a weighted average across books. Pinnacle has weight 3. BetOnline and LowVig (`betonlineag`, `lowvig`) have weight 2. Everyone else has weight 1. Circa and Bookmaker are also weighted 2 in `config.py`, but the Odds API did not list them for NFL in October 2026. Edit the weights in `config.py`.
 3. **Line mismatch**, for example Polymarket at 52.5 while books show 51.5:
    - First, an exact alternate line from the books (`alternate_spreads`, `alternate_totals`, `player_*_alternate`) is used. That counts as `fair_source = books`.
-   - Otherwise, spreads and totals are converted with a discretised normal model: margin σ 13.5 with extra mass on key numbers 3 and 7, total σ 10. These rows are labelled `fair_source = model (low conf.)` and never flag unless `--allow-model` is set.
-   - Player props are never model-converted. They get no fair value, with a reason.
+   - Otherwise, **full-game** spreads and totals are converted with a discretised normal model: margin σ 13.5 with extra mass on key numbers 3 and 7, total σ 10. These rows are labelled `fair_source = model (low conf.)` and never flag unless `--allow-model` is set.
+   - Halves, quarters, team totals and player props are never model-converted, because those σ values only describe full games. They get no fair value, with a reason.
 
 **Edge**
 
@@ -105,7 +117,7 @@ fee  = rate × p × (1 − p)        per share, taker only (Polymarket's publish
 edge = fair − ask − fee
 ```
 
-A row is flagged when `edge ≥ min_edge` (default 0.03), liquidity ≥ the threshold and the fair value is not model-derived. The fee rate comes from the market's `feeSchedule` when Gamma provides one, and is 0 when `feesEnabled` is false. Otherwise it falls back to `default_fee_rate = 0.05`. That fallback is the reported 2026 sports rate, not verified; the footer always prints which rate was used.
+A row is flagged when `edge ≥ min_edge` (default 0.03), liquidity ≥ the threshold and the fair value is not model-derived. The fee rate comes from the market's `feeSchedule`. Live NFL markets on 2026-10-19 carried `{"rate": 0.03, "exponent": 1, "takerOnly": true}` with `feeType: sports_fees_nfl_cfb_oct26`. The rate is 0 when `feesEnabled` is false. If a market has no schedule, the tool falls back to `default_fee_rate = 0.05`, which is deliberately conservative. The footer always prints which rate was used.
 
 **Signals** (context only; they never change fair values)
 
@@ -139,28 +151,39 @@ The footer always reads `N markets checked, K flagged`. When K = 0 it prints **N
 
 - **One-sided props.** Anytime-TD and milestone ("250+") markets are often quoted only on "Yes" or "Over". Those get no fair value rather than a guessed one.
 - **Model-converted lines** are approximations: a fixed σ, rough key-number weights, and push handling that assumes books grade integer lines as pushes.
-- **Fees.** The fee formula and the 0.05 fallback rate come from third-party summaries of Polymarket's fee docs; confirm on the first live run. Maker orders pay no fee, and the tool assumes you take liquidity.
+- **Fees.** The rate is read per market. The formula `rate × p × (1 − p)` comes from third-party summaries of Polymarket's fee docs. Maker orders pay no fee, and the tool assumes you take liquidity.
+- **Period ties.** A sportsbook's 2-way half or quarter moneyline usually pushes on a tie. Polymarket's 1H/1Q moneyline rules for a tied period may differ, so read the market rules.
 - **Stale prices.** Gamma's `bestBid`/`bestAsk` can lag the order book; the CLOB book is preferred when it loads. A wide or stale market is flagged in the output but still evaluated.
 - **Question parsing.** Mapping a Polymarket question to a sportsbook market uses `sportsMarketType` plus regex on the question text. Unrecognised formats show up in the "No fair value" table with a reason. They are never silently dropped.
 - **Ties and pushes.** Polymarket's resolution rules for ties and pushes may differ from a sportsbook's. Read the market rules for integer lines and moneylines.
 - **Free data only.** Historical odds are paid, so line history starts at your first snapshot.
 
-## Not yet verified against live APIs — first-live-run checklist
+## What the first live run verified (2026-10-19)
 
-These were taken from docs and observed conventions. They could not be checked from the build environment.
+- **Slug:** `nfl-was-sf-2026-10-20` is the UTC date. The local-date slug returned nothing.
+- **Events:** two, `…-2026-10-20` (327 game, half and quarter markets) and `…-player-props` (167 markets). The props event was found by the suffix probe, not by search.
+- **`sportsMarketType` values seen:**
+  - Priced: `moneyline`, `spreads`, `totals`, `team_totals`, each also with a `first_half_`/`second_half_`/`q1_`…`q4_` prefix. Props: `passing_yards`, `passing_touchdowns`, `passing_attempts`, `passing_completions`, `rushing_yards`, `receiving_yards`, `receptions`, `longest_reception`, `anytime_touchdowns`, `two_plus_touchdowns`.
+  - No sportsbook equivalent: `team_first_touchdowns`, `exact_margin`, `safety`, `team_touchdowns`, `team_offensive_yards`, `two_point_conversions`, `qN_both_teams_to_score_points`.
+- **Question formats:**
+  - `Spread: 49ers (-6.5)` (outcome 0 is the named team; `line` matches)
+  - `1Q Spread: Commanders (-2.5)`
+  - `Commanders vs. 49ers: 1H O/U 22.5`
+  - `Commanders 1H Team Total: O/U 6.5`
+  - `Commanders vs. 49ers: 2H Moneyline`
+  - `Brock Purdy: Passing Yards O/U 224.5`
+  - `George Kittle: Anytime Touchdown`
+  - `Christian McCaffrey: 2+ Touchdowns`
+- **Field types:** `outcomes`, `outcomePrices` and `clobTokenIds` are JSON strings. `bestBid` and `liquidityNum` can be null.
+- **CLOB `/book`:** prices and sizes are strings, and both sides are listed worst-first.
+- **`/prices-history?market=<token_id>&interval=1d&fidelity=5`:** returns 5-minute points, so fidelity is in minutes.
+- **Odds API:** every market key used exists (the `/events/{id}/markets` listing costs 1 credit). Team totals carry the team in `description`.
+- **Hand-checks** against the raw responses:
+  - ML: Pinnacle SF −340/WAS +289 gives 76.17%; Polymarket asks 0.24 / 0.77.
+  - Prop: McCaffrey receptions 4.5, Pinnacle −127/+105, gives 53.67%.
+  - Total: main line 51.5 (DraftKings) / 52 (Pinnacle), down from 52.5 in the reference notes.
 
-- Gamma: `/events?slug=`, `/public-search?q=` (response shape `{"events": [...]}`), market fields `sportsMarketType` (values seen: `moneyline`, `spreads`, `totals`), `line`, `feesEnabled`, `feeSchedule.rate`/`exponent`.
-- Polymarket question wording for props and spreads. The parsers handle `Player: Stat O/U N.5`, `Will Player throw for 250+ … yards?`, `Will Player score a touchdown?` and `Spread: Team (-7.5)`.
-- Spread `line` sign convention when the question has no `(±x.5)`; that case is flagged in the notes.
-- CLOB `/book?token_id=` (string prices, unsorted levels) and `/prices-history?market=<token_id>&interval=1d&fidelity=5` (fidelity treated as minutes).
-- The Odds API market keys for props (`player_pass_yds`, `player_reception_yds`, `player_anytime_td`, …), `alternate_spreads`/`alternate_totals`, and period suffixes (`spreads_h1`, `h2h_q1`). The full list is in `sportsbooks.KNOWN_PROP_STATS`. If the API rejects a key (HTTP 422), the run retries without player props and says so.
-- Bookmaker keys for the sharp tier (`circasports`, `bookmaker`, `lowvig`, `betonlineag`).
-
-On the first live run:
-
-1. Run `pm_edges markets …` and `pm_edges edges … --snapshot`. Look at the "No fair value" table for parsing misses.
-2. Copy the run folder from `data/raw/<game>/<run>/` into `tests/fixtures/` and add regression tests against it. `tests/fixtures/build_synthetic.py` shows the shapes the tests expect.
-3. Hand-check three markets: one moneyline, one total and one prop. Compare the Polymarket UI with the tool's bid/ask/size, and a sportsbook with the tool's prices and no-vig numbers.
+Still worth checking: the Polymarket UI against the CLOB numbers, and Polymarket's tie and push rules for integer lines and period moneylines.
 
 ## Layout
 

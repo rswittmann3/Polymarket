@@ -94,7 +94,9 @@ def fair_for(sel: Selection, index: BookIndex, cfg: Config, allow_model: bool = 
     if not index.books_for(sel):
         return Fair(None, "none", reason="no book lists this market")
 
-    model = model_for(sel.market_type, cfg) if allow_model and sel.line is not None else None
+    # The sigmas are full-game numbers; halves and quarters are not modelled.
+    model = model_for(sel.market_type, cfg) \
+        if allow_model and sel.line is not None and sel.period == "full" and not sel.player else None
     if model is not None:
         all_pairs, _ = index.pairs(sel, exact=False)
         best: dict[str, _Pair] = {}
@@ -123,8 +125,11 @@ def fair_for(sel: Selection, index: BookIndex, cfg: Config, allow_model: bool = 
     if notes:
         return Fair(None, "none", reason="; ".join(sorted(set(notes)))[:160] + " (one-sided)")
     if sel.line is not None:
+        why = ("no line model for props" if sel.market_type == "player_prop"
+               else "line model is full-game only" if sel.period != "full"
+               else "no line model for team totals" if sel.player else "")
         return Fair(None, "none", reason=f"no book quotes both sides at {sel.line:g}"
-                    + ("" if model_for(sel.market_type, cfg) else "; no line model for props"))
+                    + (f"; {why}" if why else ""))
     return Fair(None, "none", reason="no two-way price at any book")
 
 
@@ -149,6 +154,8 @@ def match_markets(markets: list[PMMarket], rows: list[BookRow], home: str, away:
         for o in m.outcomes:
             if o.selection is None:
                 fair = Fair(None, "none", reason=m.parse_note or "not mapped to a sportsbook market")
+            elif not cfg.in_scope(o.selection.period):
+                fair = Fair(None, "none", reason=f"{o.selection.period} odds not requested (--scope {cfg.scope})")
             else:
                 fair = fair_for(o.selection, index, cfg)
             out.append(OutcomeFair(m, o.index, fair))
