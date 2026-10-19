@@ -89,6 +89,7 @@ class Config:
     line_move_min_prob: float = 0.01
     juice_gap_min: float = 0.02     # implied-prob gap between sides at one book
     divergence_min: float = 0.02    # Pinnacle vs soft-book average no-vig
+    drift_min_liquidity: float = 1000.0   # Polymarket drift only on markets this liquid
 
     # HTTP
     timeout_s: float = 20.0

@@ -168,3 +168,11 @@ def test_confirm_sharp_requires_pinnacle_edge(spec, cfg, fake_apis):
     row = next(x for x in b.edges if x.market.question.endswith("O/U 52.5") and x.outcome.name == "Over")
     assert row.edge >= 0.005 and row.pin_edge < 0.005 and not row.flagged
     assert "Pinnacle does not confirm" in row.why_not
+
+
+def test_drift_skipped_on_illiquid_or_wide_markets(spec, cfg, fake_apis):
+    _, a = run_all(spec, cfg, fake_apis)
+    assert any(s.kind == "pm_drift" for s in a.signals)          # tight, liquid moneyline
+    cfg.drift_min_liquidity = 10_000_000
+    _, b = run_all(spec, cfg, fake_apis)
+    assert not any(s.kind == "pm_drift" for s in b.signals)

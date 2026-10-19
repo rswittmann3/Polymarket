@@ -133,3 +133,55 @@ def test_store_round_trip(tmp_path):
     sigs, _ = compute_signals(snaps, Config(), "SF", "WAS")
     assert ("steam", SPREAD) in kinds(sigs)
     store.close()
+
+
+def test_line_move_ignores_change_in_which_books_are_quoted():
+    a = snapshot(T0, -7.5, {}, ML_EVEN, 1)
+    b = snapshot(T0 + timedelta(minutes=30), -7.5, {}, ML_EVEN, 2)
+    # a single book is added with a very different line, and another is dropped
+    a.book_rows[:] = [x for x in a.book_rows if x.book != "betmgm"]
+    for row in b.book_rows:
+        if row.book == "betmgm" and row.market_key == "spreads":
+            line = -3.5 if row.selection.side == "SF" else 3.5
+            object.__setattr__(row, "selection", Selection("spread", line=line, side=row.selection.side))
+    sigs, _ = compute_signals([a, b], Config(), "SF", "WAS")
+    assert not [s for s in sigs if s.kind == "line_move"]
+
+
+def test_line_move_needs_two_books_and_reports_median():
+    a = snapshot(T0, -5.5, {}, ML_EVEN, 1)
+    b = snapshot(T0 + timedelta(minutes=30), -5.5, {}, ML_EVEN, 2)
+    def move(book, to):
+        for row in b.book_rows:
+            if row.book == book and row.market_key == "spreads":
+                line = to if row.selection.side == "SF" else -to
+                object.__setattr__(row, "selection", Selection("spread", line=line, side=row.selection.side))
+    move("pinnacle", -6.5)
+    sigs, _ = compute_signals([a, b], Config(), "SF", "WAS")
+    assert ("line_move", SPREAD) not in kinds(sigs)          # one book is not a market move
+    move("fanduel", -6.5)
+    sigs, _ = compute_signals([a, b], Config(), "SF", "WAS")
+    mv = next(s for s in sigs if s.kind == "line_move" and s.group == SPREAD)
+    assert "-5.5 → -6.5" in mv.text and "2 of 4 books" in mv.text
+
+
+def test_pm_drift_distrusts_history_that_disagrees_with_the_book():
+    t = 1_800_000_000
+    hist = [(t - 7 * 3600 + i * 300, 0.50) for i in range(84)] + [(t, 0.09)]
+    assert pm_drift(hist, 0.2, ("pm", "1"), "Yes", now=0.135) == []       # last point is off the book
+    assert pm_drift(hist, 0.2, ("pm", "1"), "Yes") != []                  # without the live mid it would fire
+    steady = [(t - 7 * 3600 + i * 300, 0.50) for i in range(84)] + [(t, 0.455)]
+    sig = pm_drift(steady, 0.40, ("pm", "1"), "Yes", now=0.45)
+    assert sig and "toward fair" in sig[0].text
+
+
+def test_line_move_ignores_books_moving_opposite_ways():
+    a = snapshot(T0, -5.5, {}, ML_EVEN, 1)
+    b = snapshot(T0 + timedelta(minutes=30), -5.5, {}, ML_EVEN, 2)
+    for row in b.book_rows:
+        if row.market_key == "spreads" and row.book in ("pinnacle", "fanduel", "draftkings", "betmgm"):
+            to = {"pinnacle": -4.5, "fanduel": -6.5, "draftkings": -4.5, "betmgm": -6.5}[row.book]
+            line = to if row.selection.side == "SF" else -to
+            object.__setattr__(row, "selection", Selection("spread", line=line, side=row.selection.side))
+    sigs, _ = compute_signals([a, b], Config(), "SF", "WAS")
+    assert ("line_move", SPREAD) not in kinds(sigs)

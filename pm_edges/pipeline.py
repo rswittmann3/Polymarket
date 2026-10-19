@@ -160,10 +160,14 @@ def analyze(run: Run, store: Store | None, bankroll: float | None = None,
 
     fair0 = {of.market.market_id: of.fair.prob for of in ofs if of.outcome_index == 0}
     for m in live:
+        # drift on a one-cent-wide-or-worse or near-empty book is noise
+        if m.spread is None or m.spread > cfg.stale_spread or m.liquidity < cfg.drift_min_liquidity \
+                or not 0.03 <= (m.mid or 0) <= 0.97:
+            continue
         hist = run.histories.get(m.market_id) or _history_from_snapshots(snaps, m.market_id)
         o0 = m.outcomes[0] if m.outcomes else None
         sigs += pm_drift(hist, fair0.get(m.market_id), ("pm", m.market_id),
-                         o0.name if o0 else m.question)
+                         o0.name if o0 else m.question, now=m.mid)
 
     edges = compute_edges(ofs, cfg, by_group(sigs), bankroll)
     return Analysis(run, ofs, edges, sigs, notes, live)

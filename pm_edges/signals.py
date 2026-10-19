@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from statistics import mean
+from statistics import mean, median
 from typing import Protocol
 
 from .config import Config
@@ -103,25 +103,36 @@ def _toward(group: tuple, d_line: float, d_prob: float) -> int:
 
 
 def line_moves(open_q, now_q, cfg: Config) -> list[Signal]:
+    """Per-book comparison with the first snapshot. A book that changed its main
+    line is a line move; a book that kept it is compared on no-vig probability.
+    Needs at least two books, so one book's quirk or a change in which books
+    were quoted is not reported as a market move."""
     out = []
     for group, now_books in now_q.items():
         open_books = open_q.get(group, {})
         common = sorted(set(open_books) & set(now_books))
-        if not common:
+        if len(common) < 2:
             continue
         side = now_books[common[0]][0]
-        o_line = [open_books[b][1] for b in common if open_books[b][1] is not None]
-        n_line = [now_books[b][1] for b in common if now_books[b][1] is not None]
-        o_p = mean(open_books[b][2] for b in common)
-        n_p = mean(now_books[b][2] for b in common)
-        d_line = (mean(n_line) - mean(o_line)) if o_line and n_line else 0.0
-        d_p = n_p - o_p
-        if abs(d_line) < 0.5 and abs(d_p) < cfg.line_move_min_prob:
+        moved = [b for b in common if open_books[b][1] != now_books[b][1]]
+        if len(moved) >= 2:
+            o_line = median(open_books[b][1] for b in moved)
+            n_line = median(now_books[b][1] for b in moved)
+            direction = _toward(group, n_line - o_line, 0.0)
+            if direction == 0:      # books moved both ways; nothing net
+                continue
+            out.append(Signal("line_move", group,
+                              f"{_group_label(group, side)}: line {o_line:+g} → {n_line:+g} since open "
+                              f"({len(moved)} of {len(common)} books)", moved, direction * 0.01))
             continue
-        line_txt = f"line {mean(o_line):+g} → {mean(n_line):+g}, " if o_line and n_line and abs(d_line) >= 0.5 else ""
-        out.append(Signal("line_move", group,
-                          f"{_group_label(group, side)}: {line_txt}no-vig {o_p:.1%} → {n_p:.1%} since open "
-                          f"({len(common)} books)", common, d_p))
+        same = [b for b in common if b not in moved]
+        d_p = median(now_books[b][2] - open_books[b][2] for b in same) if len(same) >= 2 else 0.0
+        if abs(d_p) >= cfg.line_move_min_prob:
+            o_p = median(open_books[b][2] for b in same)
+            n_p = median(now_books[b][2] for b in same)
+            out.append(Signal("line_move", group,
+                              f"{_group_label(group, side)}: no-vig {o_p:.1%} → {n_p:.1%} since open "
+                              f"({len(same)} books, median)", same, d_p))
     return out
 
 
@@ -226,12 +237,17 @@ def sharp_soft_divergence(rows: list[BookRow], home: str, away: str, cfg: Config
 
 
 def pm_drift(history: list[tuple[int, float]], fair0: float | None, group: tuple,
-             label: str, min_move: float = 0.01) -> list[Signal]:
+             label: str, min_move: float = 0.01, now: float | None = None,
+             max_gap: float = 0.03) -> list[Signal]:
     """Change in Polymarket price of outcome 0 over 1h and 6h, and whether it
-    moved toward the books' fair probability."""
+    moved toward the books' fair probability. `now` is the live mid; a history
+    whose last point disagrees with it by more than `max_gap` is not trusted."""
     if not history:
         return []
-    t_now, p_now = history[-1]
+    t_now, p_last = history[-1]
+    if now is not None and abs(p_last - now) > max_gap:
+        return []
+    p_now = now if now is not None else p_last
     parts = []
     biggest = 0.0
     for hours in (1, 6):
