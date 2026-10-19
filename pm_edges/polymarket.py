@@ -408,6 +408,7 @@ def parse_book(book: dict) -> dict:
     bids = sorted(levels("bids"), reverse=True)
     asks = sorted(levels("asks"))
     return {
+        "bids": bids,
         "bid": bids[0][0] if bids else None,
         "bid_size": sum(s for p, s in bids if p == bids[0][0]) if bids else None,
         "ask": asks[0][0] if asks else None,
@@ -417,9 +418,34 @@ def parse_book(book: dict) -> dict:
     }
 
 
+def walk_book(levels: list[tuple[float, float]], dollars: float) -> dict:
+    """Spend up to `dollars` down a list of (price, shares) levels, best first.
+
+    Returns shares bought, dollars spent, average price, the last price
+    touched, and whether the whole amount filled. For asks this is the cost of
+    entering; for bids (selling `dollars` worth of value at the bid) pass the
+    bid levels best-first and read it as the proceeds side.
+    """
+    left, shares, spent, last = dollars, 0.0, 0.0, None
+    for price, size in levels:
+        if left <= 1e-9:
+            break
+        take = min(size, left / price)
+        shares += take
+        spent += take * price
+        left -= take * price
+        last = price
+    return {
+        "shares": shares, "spent": spent,
+        "avg": spent / shares if shares else None,
+        "last": last, "filled": left <= 0.01,
+    }
+
+
 def apply_book(o: PMOutcome, parsed: dict) -> None:
     o.bid, o.ask = parsed["bid"], parsed["ask"]
     o.ask_size, o.ask_levels = parsed["ask_size"], parsed["asks"]
+    o.bid_levels = parsed["bids"]
     o.price_source = "clob"
 
 

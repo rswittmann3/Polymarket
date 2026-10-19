@@ -75,6 +75,7 @@ class PMOutcome:
     ask: float | None = None    # best price you can buy this outcome at
     ask_size: float | None = None   # shares available at `ask`
     ask_levels: list[tuple[float, float]] = field(default_factory=list)  # (price, size) ascending
+    bid_levels: list[tuple[float, float]] = field(default_factory=list)  # (price, size) descending
     price_source: str = "gamma"     # gamma | clob
 
 

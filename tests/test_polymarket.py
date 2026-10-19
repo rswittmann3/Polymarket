@@ -212,3 +212,21 @@ def test_event_markets_dedupes():
     events = load("gamma_event_base.json") * 2
     ms = event_markets(events, GAME, "SF", "WAS")
     assert len(ms) == len(load("gamma_event_base.json")[0]["markets"])
+
+
+def test_walk_book_slippage():
+    from pm_edges.polymarket import walk_book
+    asks = [(0.40, 300), (0.42, 500), (0.47, 1000)]
+    one = walk_book(asks, 60)                      # fits in the first level
+    assert one["avg"] == pytest.approx(0.40) and one["filled"] and one["shares"] == pytest.approx(150)
+    two = walk_book(asks, 200)                     # 300 sh at .40 = $120, then $80 at .42
+    assert two["shares"] == pytest.approx(300 + 80 / 0.42)
+    assert two["avg"] == pytest.approx(200 / two["shares"]) and two["last"] == 0.42
+    deep = walk_book(asks, 1000)                   # more than the book holds
+    assert not deep["filled"] and deep["spent"] == pytest.approx(300 * .40 + 500 * .42 + 1000 * .47)
+    assert walk_book([], 50)["avg"] is None and not walk_book([], 50)["filled"]
+
+
+def test_parse_book_keeps_bids_best_first():
+    parsed = parse_book(load("clob_books.json")["tok204a"])
+    assert parsed["bids"] == [(0.38, 200)]
