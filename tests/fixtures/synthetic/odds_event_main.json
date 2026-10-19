@@ -1,0 +1,371 @@
+{
+ "id": "evt_was_sf",
+ "sport_key": "americanfootball_nfl",
+ "commence_time": "2026-10-20T00:15:00Z",
+ "home_team": "San Francisco 49ers",
+ "away_team": "Washington Commanders",
+ "bookmakers": [
+  {
+   "key": "pinnacle",
+   "title": "Pinnacle",
+   "last_update": "2026-10-19T21:58:00Z",
+   "markets": [
+    {
+     "key": "h2h",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -410
+      },
+      {
+       "name": "Washington Commanders",
+       "price": 360
+      }
+     ]
+    },
+    {
+     "key": "spreads",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -104,
+       "point": -7.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -106,
+       "point": 7.5
+      }
+     ]
+    },
+    {
+     "key": "totals",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -104,
+       "point": 52.5
+      },
+      {
+       "name": "Under",
+       "price": -112,
+       "point": 52.5
+      }
+     ]
+    },
+    {
+     "key": "spreads_h1",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -105,
+       "point": -3.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -105,
+       "point": 3.5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "draftkings",
+   "title": "Draftkings",
+   "last_update": "2026-10-19T21:58:00Z",
+   "markets": [
+    {
+     "key": "h2h",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -425
+      },
+      {
+       "name": "Washington Commanders",
+       "price": 335
+      }
+     ]
+    },
+    {
+     "key": "spreads",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -110,
+       "point": -7.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -110,
+       "point": 7.5
+      }
+     ]
+    },
+    {
+     "key": "totals",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -105,
+       "point": 52.5
+      },
+      {
+       "name": "Under",
+       "price": -115,
+       "point": 52.5
+      }
+     ]
+    },
+    {
+     "key": "spreads_h1",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -110,
+       "point": -3.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -110,
+       "point": 3.5
+      }
+     ]
+    },
+    {
+     "key": "player_pass_yds",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -112,
+       "point": 245.5,
+       "description": "Brock Purdy"
+      },
+      {
+       "name": "Under",
+       "price": -108,
+       "point": 245.5,
+       "description": "Brock Purdy"
+      },
+      {
+       "name": "Over",
+       "price": -110,
+       "point": 249.5,
+       "description": "Jayden Daniels"
+      },
+      {
+       "name": "Under",
+       "price": -110,
+       "point": 249.5,
+       "description": "Jayden Daniels"
+      }
+     ]
+    },
+    {
+     "key": "player_rush_yds",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -110,
+       "point": 72.5,
+       "description": "Christian McCaffrey"
+      },
+      {
+       "name": "Under",
+       "price": -110,
+       "point": 72.5,
+       "description": "Christian McCaffrey"
+      }
+     ]
+    },
+    {
+     "key": "player_anytime_td",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": -175,
+       "description": "Christian McCaffrey"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "fanduel",
+   "title": "Fanduel",
+   "last_update": "2026-10-19T21:58:00Z",
+   "markets": [
+    {
+     "key": "h2h",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -455
+      },
+      {
+       "name": "Washington Commanders",
+       "price": 350
+      }
+     ]
+    },
+    {
+     "key": "spreads",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -110,
+       "point": -7.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -110,
+       "point": 7.5
+      }
+     ]
+    },
+    {
+     "key": "totals",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -108,
+       "point": 52.5
+      },
+      {
+       "name": "Under",
+       "price": -112,
+       "point": 52.5
+      }
+     ]
+    },
+    {
+     "key": "player_pass_yds",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -110,
+       "point": 245.5,
+       "description": "Brock Purdy"
+      },
+      {
+       "name": "Under",
+       "price": -110,
+       "point": 245.5,
+       "description": "Brock Purdy"
+      },
+      {
+       "name": "Over",
+       "price": -110,
+       "point": 249.5,
+       "description": "Jayden Daniels"
+      },
+      {
+       "name": "Under",
+       "price": -110,
+       "point": 249.5,
+       "description": "Jayden Daniels"
+      }
+     ]
+    },
+    {
+     "key": "player_rush_yds",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -110,
+       "point": 72.5,
+       "description": "Christian McCaffrey"
+      },
+      {
+       "name": "Under",
+       "price": -110,
+       "point": 72.5,
+       "description": "Christian McCaffrey"
+      }
+     ]
+    },
+    {
+     "key": "player_anytime_td",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Yes",
+       "price": -180,
+       "description": "Christian McCaffrey"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "betmgm",
+   "title": "Betmgm",
+   "last_update": "2026-10-19T21:58:00Z",
+   "markets": [
+    {
+     "key": "h2h",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -400
+      },
+      {
+       "name": "Washington Commanders",
+       "price": 320
+      }
+     ]
+    },
+    {
+     "key": "spreads",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -115,
+       "point": -7.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -105,
+       "point": 7.5
+      }
+     ]
+    },
+    {
+     "key": "totals",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -110,
+       "point": 52.5
+      },
+      {
+       "name": "Under",
+       "price": -110,
+       "point": 52.5
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

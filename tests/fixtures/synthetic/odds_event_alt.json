@@ -1,0 +1,119 @@
+{
+ "id": "evt_was_sf",
+ "sport_key": "americanfootball_nfl",
+ "commence_time": "2026-10-20T00:15:00Z",
+ "home_team": "San Francisco 49ers",
+ "away_team": "Washington Commanders",
+ "bookmakers": [
+  {
+   "key": "pinnacle",
+   "title": "Pinnacle",
+   "last_update": "2026-10-19T21:58:00Z",
+   "markets": [
+    {
+     "key": "alternate_spreads",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -125,
+       "point": -6.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": 105,
+       "point": 6.5
+      },
+      {
+       "name": "San Francisco 49ers",
+       "price": 110,
+       "point": -8.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": -130,
+       "point": 8.5
+      }
+     ]
+    },
+    {
+     "key": "alternate_totals",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -118,
+       "point": 51.5
+      },
+      {
+       "name": "Under",
+       "price": 102,
+       "point": 51.5
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "draftkings",
+   "title": "Draftkings",
+   "last_update": "2026-10-19T21:58:00Z",
+   "markets": [
+    {
+     "key": "alternate_spreads",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "San Francisco 49ers",
+       "price": -130,
+       "point": -6.5
+      },
+      {
+       "name": "Washington Commanders",
+       "price": 110,
+       "point": 6.5
+      }
+     ]
+    },
+    {
+     "key": "alternate_totals",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -135,
+       "point": 50.5
+      },
+      {
+       "name": "Under",
+       "price": 110,
+       "point": 50.5
+      },
+      {
+       "name": "Over",
+       "price": 115,
+       "point": 54.5
+      },
+      {
+       "name": "Under",
+       "price": -140,
+       "point": 54.5
+      }
+     ]
+    },
+    {
+     "key": "player_rush_yds_alternate",
+     "last_update": "2026-10-19T21:58:00Z",
+     "outcomes": [
+      {
+       "name": "Over",
+       "price": -105,
+       "point": 74.5,
+       "description": "Christian McCaffrey"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

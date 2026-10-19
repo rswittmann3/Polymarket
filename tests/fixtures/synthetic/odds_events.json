@@ -1,0 +1,18 @@
+[
+ {
+  "id": "evt_was_sf",
+  "sport_key": "americanfootball_nfl",
+  "sport_title": "NFL",
+  "commence_time": "2026-10-20T00:15:00Z",
+  "home_team": "San Francisco 49ers",
+  "away_team": "Washington Commanders"
+ },
+ {
+  "id": "evt_other",
+  "sport_key": "americanfootball_nfl",
+  "sport_title": "NFL",
+  "commence_time": "2026-10-19T17:00:00Z",
+  "home_team": "Dallas Cowboys",
+  "away_team": "Washington Commanders"
+ }
+]

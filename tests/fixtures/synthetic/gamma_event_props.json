@@ -1,0 +1,121 @@
+[
+ {
+  "id": "9002",
+  "slug": "nfl-was-sf-2026-10-20-player-props",
+  "title": "Commanders vs. 49ers: Player Props",
+  "markets": [
+   {
+    "id": "201",
+    "conditionId": "0xcond201",
+    "question": "Brock Purdy: Passing Yards O/U 245.5",
+    "slug": "nfl-was-sf-2026-10-20-201",
+    "outcomes": "[\"Over\", \"Under\"]",
+    "outcomePrices": "[\"0.48\", \"0.52\"]",
+    "clobTokenIds": "[\"tok201a\", \"tok201b\"]",
+    "bestBid": 0.47,
+    "bestAsk": 0.49,
+    "lastTradePrice": 0.48,
+    "liquidity": "7000",
+    "liquidityNum": 7000,
+    "volume": "28000",
+    "volumeNum": 28000,
+    "gameStartTime": "2026-10-20 00:15:00+00",
+    "endDate": "2026-10-27T00:15:00Z",
+    "active": true,
+    "closed": false,
+    "feesEnabled": true,
+    "feeSchedule": {
+     "rate": 0.05,
+     "exponent": 1,
+     "taker_only": true,
+     "rebate_rate": 0.25
+    },
+    "sportsMarketType": "player_props"
+   },
+   {
+    "id": "202",
+    "conditionId": "0xcond202",
+    "question": "Christian McCaffrey: Rushing Yards O/U 75.5",
+    "slug": "nfl-was-sf-2026-10-20-202",
+    "outcomes": "[\"Over\", \"Under\"]",
+    "outcomePrices": "[\"0.45\", \"0.55\"]",
+    "clobTokenIds": "[\"tok202a\", \"tok202b\"]",
+    "bestBid": 0.44,
+    "bestAsk": 0.46,
+    "lastTradePrice": 0.45,
+    "liquidity": "6000",
+    "liquidityNum": 6000,
+    "volume": "24000",
+    "volumeNum": 24000,
+    "gameStartTime": "2026-10-20 00:15:00+00",
+    "endDate": "2026-10-27T00:15:00Z",
+    "active": true,
+    "closed": false,
+    "feesEnabled": true,
+    "feeSchedule": {
+     "rate": 0.05,
+     "exponent": 1,
+     "taker_only": true,
+     "rebate_rate": 0.25
+    },
+    "sportsMarketType": "player_props"
+   },
+   {
+    "id": "203",
+    "conditionId": "0xcond203",
+    "question": "Will Christian McCaffrey score a touchdown?",
+    "slug": "nfl-was-sf-2026-10-20-203",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.63\", \"0.37\"]",
+    "clobTokenIds": "[\"tok203a\", \"tok203b\"]",
+    "bestBid": 0.62,
+    "bestAsk": 0.64,
+    "lastTradePrice": 0.63,
+    "liquidity": "15000",
+    "liquidityNum": 15000,
+    "volume": "60000",
+    "volumeNum": 60000,
+    "gameStartTime": "2026-10-20 00:15:00+00",
+    "endDate": "2026-10-27T00:15:00Z",
+    "active": true,
+    "closed": false,
+    "feesEnabled": true,
+    "feeSchedule": {
+     "rate": 0.05,
+     "exponent": 1,
+     "taker_only": true,
+     "rebate_rate": 0.25
+    },
+    "sportsMarketType": "player_props"
+   },
+   {
+    "id": "204",
+    "conditionId": "0xcond204",
+    "question": "Will Jayden Daniels throw for 250+ passing yards?",
+    "slug": "nfl-was-sf-2026-10-20-204",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.45\", \"0.55\"]",
+    "clobTokenIds": "[\"tok204a\", \"tok204b\"]",
+    "bestBid": 0.38,
+    "bestAsk": 0.4,
+    "lastTradePrice": 0.45,
+    "liquidity": "4000",
+    "liquidityNum": 4000,
+    "volume": "16000",
+    "volumeNum": 16000,
+    "gameStartTime": "2026-10-20 00:15:00+00",
+    "endDate": "2026-10-27T00:15:00Z",
+    "active": true,
+    "closed": false,
+    "feesEnabled": true,
+    "feeSchedule": {
+     "rate": 0.05,
+     "exponent": 1,
+     "taker_only": true,
+     "rebate_rate": 0.25
+    },
+    "sportsMarketType": "player_props"
+   }
+  ]
+ }
+]

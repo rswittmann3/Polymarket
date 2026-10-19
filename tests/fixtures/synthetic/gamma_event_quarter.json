@@ -1,0 +1,31 @@
+[
+ {
+  "id": "9003",
+  "slug": "nfl-was-sf-2026-10-20-highest-scoring-quarter",
+  "title": "Highest scoring quarter",
+  "markets": [
+   {
+    "id": "301",
+    "conditionId": "0xcond301",
+    "question": "Will the 4th quarter be the highest scoring quarter?",
+    "slug": "nfl-was-sf-2026-10-20-301",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.31\", \"0.69\"]",
+    "clobTokenIds": "[\"tok301a\", \"tok301b\"]",
+    "bestBid": 0.3,
+    "bestAsk": 0.33,
+    "lastTradePrice": 0.31,
+    "liquidity": "3000",
+    "liquidityNum": 3000,
+    "volume": "12000",
+    "volumeNum": 12000,
+    "gameStartTime": "2026-10-20 00:15:00+00",
+    "endDate": "2026-10-27T00:15:00Z",
+    "active": true,
+    "closed": false,
+    "feesEnabled": false,
+    "feeSchedule": null
+   }
+  ]
+ }
+]
