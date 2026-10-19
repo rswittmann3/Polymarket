@@ -55,7 +55,9 @@ def main() -> None:
     store = Store(cfg.db_path)
     try:
         a = analyze(run, store)
-        n_snaps = len(store.snapshots(spec.game_id))
+        snaps = store.snapshots(spec.game_id)
+        n_snaps = len(snaps)
+        snap_times = [x.taken_at.isoformat() for x in snaps]
     finally:
         store.close()
 
@@ -112,6 +114,8 @@ def main() -> None:
         "game": f"{spec.away} @ {spec.home}",
         "game_date": spec.date.isoformat(),
         "snapshots": n_snaps,
+        "open_at": snap_times[0] if snap_times else None,
+        "kickoff": next((m.game_start_time for m in run.markets if m.game_start_time), None),
         "markets_checked": len(a.checked),
         "outcomes_priced": len(edges),
         "outcomes_unpriced": sum(gaps.values()),
