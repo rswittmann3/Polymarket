@@ -74,7 +74,7 @@ def print_markets(console: Console, markets: list[PMMarket], cfg: Config, show_a
 
 EDGE_COLUMNS = [
     "market", "outcome", "selection", "ask", "fee", "fair", "edge_pts", "flagged", "why_not",
-    "size_at_ask", "size_with_edge", "fair_source", "books", "pinnacle_fair", "fair_note",
+    "size_at_ask", "size_with_edge", "fair_source", "books", "pinnacle_fair", "pin_edge_pts", "fair_note",
     "stale", "signals", "kelly_stake", "fee_rate", "price_source", "liquidity", "slug",
 ]
 
@@ -95,6 +95,7 @@ def edge_record(r: EdgeRow) -> dict:
         "fair_source": r.fair.source,
         "books": r.fair.books_label,
         "pinnacle_fair": r.fair.book_prob("pinnacle"),
+        "pin_edge_pts": None if r.pin_edge is None else round(r.pin_edge * 100, 2),
         "fair_note": r.fair.reason,
         "stale": "; ".join(r.stale),
         "signals": " | ".join(r.signals),
@@ -118,12 +119,12 @@ def print_edges(console: Console, rows: list[EdgeRow], n_checked: int, cfg: Conf
     priced.sort(key=lambda r: (not r.flagged, -(r.edge if r.edge is not None else -9)))
     t = Table(title=f"Polymarket vs sportsbook fair (min edge {cfg.min_edge * 100:.1f} pts, "
                     f"de-vig {cfg.devig_method})", title_justify="left")
-    cols = ["", "market", "side", "ask", "fee", "fair", "edge", "size@ask", "size w/ edge",
+    cols = ["", "market", "side", "ask", "fee", "fair", "edge", "vs Pin", "size@ask", "size w/ edge",
             "fair source", "books", "signals / notes"]
     if kelly:
         cols.insert(-1, "¼-Kelly $")
     for c in cols:
-        t.add_column(c, justify="right" if c in ("ask", "fee", "fair", "edge", "size@ask",
+        t.add_column(c, justify="right" if c in ("ask", "fee", "fair", "edge", "vs Pin", "size@ask",
                                                  "size w/ edge", "¼-Kelly $") else "left",
                      overflow="fold")
     for r in priced:
@@ -142,7 +143,7 @@ def print_edges(console: Console, rows: list[EdgeRow], n_checked: int, cfg: Conf
         if r.fair.reason:
             notes.append(f"[dim]{rx(r.fair.reason)}[/]")
         row = [mark, rx(r.market.question), r.outcome.selection.label() if r.outcome.selection else r.outcome.name,
-               _p(r.ask), _p(r.fee, 4), _pct(r.fair.prob), edge_txt, _n(r.size_at_ask),
+               _p(r.ask), _p(r.fee, 4), _pct(r.fair.prob), edge_txt, _pts(r.pin_edge), _n(r.size_at_ask),
                _n(r.size_with_edge), src, r.fair.books_label, "\n".join(notes)]
         if kelly:
             row.insert(-1, "-" if r.kelly_stake is None else f"{r.kelly_stake:,.2f}")

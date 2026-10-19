@@ -153,3 +153,18 @@ def test_offline_replays_saved_4xx(spec, cfg, fake_apis):
     off = collect(spec, cfg, offline=True)
     w = next(w for w in off.warnings if "no CLOB book" in w)
     assert "HTTP 404" in w and "no saved response" not in w
+
+
+def test_confirm_sharp_requires_pinnacle_edge(spec, cfg, fake_apis):
+    _, a = run_all(spec, cfg, fake_apis)
+    daniels = next(x for x in a.edges if "Daniels" in x.market.question and x.outcome.name == "Yes")
+    assert daniels.flagged and daniels.pin_edge is None        # Pinnacle does not quote this prop
+    over = next(x for x in a.edges if x.market.question.endswith("O/U 52.5") and x.outcome.name == "Over")
+    assert over.pin_edge is not None
+    # Make Pinnacle disagree with the soft books on the Over: cheap ask vs consensus only
+    cfg.confirm_sharp = True
+    cfg.min_edge = 0.005
+    _, b = run_all(spec, cfg, fake_apis)
+    row = next(x for x in b.edges if x.market.question.endswith("O/U 52.5") and x.outcome.name == "Over")
+    assert row.edge >= 0.005 and row.pin_edge < 0.005 and not row.flagged
+    assert "Pinnacle does not confirm" in row.why_not

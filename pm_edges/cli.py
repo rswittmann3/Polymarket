@@ -58,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--devig", choices=sorted(DEVIG), help="de-vig method (default power)")
     e.add_argument("--allow-model", action="store_true",
                    help="allow model-converted lines to be flagged (lower confidence)")
+    e.add_argument("--confirm-sharp", action="store_true",
+                   help="only flag when Pinnacle's own no-vig price also clears --min-edge")
     e.add_argument("--fee-rate", type=float,
                    help="override the Polymarket taker fee rate (fee/share = rate*p*(1-p))")
     e.add_argument("--bookmakers", help="Odds API bookmaker keys, comma-separated (default: 10 books "
@@ -90,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if getattr(args, "allow_model", False):
         cfg.allow_model = True
+    if getattr(args, "confirm_sharp", False):
+        cfg.confirm_sharp = True
     if getattr(args, "no_alternates", False):
         cfg.fetch_alternates = False
     if getattr(args, "bookmakers", None):

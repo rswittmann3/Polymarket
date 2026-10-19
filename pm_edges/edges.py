@@ -19,6 +19,7 @@ class EdgeRow:
     ask: float | None
     fee: float | None
     edge: float | None
+    pin_edge: float | None      # same edge, but against Pinnacle's no-vig price alone
     flagged: bool
     why_not: str                 # empty when flagged
     fee_note: str
@@ -49,6 +50,8 @@ def compute_edges(ofs: list[OutcomeFair], cfg: Config, signals: dict[tuple, list
         ask = o.ask
         fee = fee_per_share(ask, rate, m.fee_exponent) if ask is not None else None
         edge = None if (fair.prob is None or ask is None) else fair.prob - ask - (fee or 0.0)
+        pin = fair.book_prob("pinnacle") if fair.source == "books" else None
+        pin_edge = None if (pin is None or ask is None) else pin - ask - (fee or 0.0)
 
         why = ""
         if not m.active or m.closed:
@@ -63,6 +66,8 @@ def compute_edges(ofs: list[OutcomeFair], cfg: Config, signals: dict[tuple, list
             why = "model-converted line (use --allow-model to flag)"
         elif edge < cfg.min_edge:
             why = f"edge below {cfg.min_edge * 100:.1f} pts"
+        elif cfg.confirm_sharp and pin_edge is not None and pin_edge < cfg.min_edge:
+            why = f"Pinnacle does not confirm ({pin_edge * 100:+.1f} pts vs Pinnacle)"
 
         size_with_edge = None
         if fair.prob is not None and o.ask_levels:
@@ -79,7 +84,7 @@ def compute_edges(ofs: list[OutcomeFair], cfg: Config, signals: dict[tuple, list
         sigs = (signals.get(o.selection.group_key(), []) if o.selection else []) \
             + signals.get(("pm", m.market_id), [])
         rows.append(EdgeRow(
-            market=m, outcome=o, fair=fair, ask=ask, fee=fee, edge=edge,
+            market=m, outcome=o, fair=fair, ask=ask, fee=fee, edge=edge, pin_edge=pin_edge,
             flagged=not why, why_not=why, fee_note=f"{rate:g} ({fee_note})",
             size_at_ask=o.ask_size, size_with_edge=size_with_edge,
             stale=is_stale(m, cfg),

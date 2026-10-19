@@ -75,6 +75,9 @@ class Config:
     # Edge flagging
     min_edge: float = 0.03
     allow_model: bool = False
+    # Also require Pinnacle's own no-vig price to clear min_edge (when Pinnacle
+    # quotes the market). Soft books drag the consensus away from the sharpest line.
+    confirm_sharp: bool = False
 
     # Kelly (off unless --kelly)
     kelly_fraction: float = 0.25
