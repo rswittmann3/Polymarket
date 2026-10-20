@@ -11,6 +11,7 @@ from rich.console import Console
 from .config import load_config
 from .fair import DEVIG
 from .httpclient import ApiError
+from .ledger import Ledger
 from .pipeline import GameSpec, analyze, collect
 from .report import print_edges, print_markets, write_csv, write_html
 from .store import Store
@@ -59,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--bet", choices=["under", "over", "ats", "ml"], default="under")
     tr.add_argument("--leave-one-out", action="store_true", help="show which conditions of --angle carry its record")
 
+    lg = sub.add_parser("ledger", help="paper-trade ledger: closing-line value and results of flagged edges", epilog=LEGAL)
+    lg.add_argument("--settle", action="store_true", help="look up Polymarket resolutions for finished games first")
+    lg.add_argument("--csv", type=Path, help="also write every entry to this CSV file")
+    lg.add_argument("--data-dir", type=Path, default=Path("data"))
+
     s = sub.add_parser("snapshot", help="store both sources in SQLite (run every 10-15 min)", epilog=LEGAL)
     _game_args(s)
     s.add_argument("--history", action="store_true", help="also pull CLOB price history")
@@ -83,6 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="periods to request odds for (default all; fewer = fewer credits)")
     e.add_argument("--no-history", action="store_true", help="skip CLOB price history (drift)")
     e.add_argument("--snapshot", action="store_true", help="also store this run as a snapshot")
+    e.add_argument("--ledger", action="store_true", help="paper-trade the flagged edges: record them and refresh earlier entries "
+                   "(run again before kickoff so the last scan stands in for the closing line)")
     e.add_argument("--max-stake", type=float, help="largest order the model considers, in dollars (default 50)")
     e.add_argument("--kelly", action="store_true", help="show a capped quarter-Kelly stake")
     e.add_argument("--bankroll", type=float, help="bankroll for --kelly")
@@ -97,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     console = Console()
     cfg = load_config(
         data_dir=args.data_dir,
-        min_liquidity=args.min_liquidity,
+        min_liquidity=getattr(args, "min_liquidity", None),
         min_edge=getattr(args, "min_edge", None),
         devig_method=getattr(args, "devig", None),
         fee_rate_override=getattr(args, "fee_rate", None),
@@ -115,6 +123,9 @@ def main(argv: list[str] | None = None) -> int:
         cfg.bookmakers = args.bookmakers
     elif getattr(args, "regions", None):
         cfg.bookmakers = None
+
+    if args.cmd == "ledger":
+        return _ledger(console, cfg, args)
 
     try:
         spec = GameSpec(args.league, args.away, args.home, args.date, args.kickoff, args.tz)
@@ -160,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
                 if args.snapshot:
                     store.write(spec.game_id, run.fetched_at, run.book_rows, run.markets)
                 result = analyze(run, store, bankroll=args.bankroll if args.kelly else None)
+                if args.ledger:
+                    added, refreshed = Ledger(store.conn).record(spec.game_id, result.edges, cfg, run.fetched_at)
+                    console.print(f"ledger: {added} new paper trade(s), {refreshed} earlier one(s) refreshed")
             finally:
                 store.close()
             print_edges(console, result.edges, len(result.checked), cfg, result.signal_notes,
@@ -176,6 +190,47 @@ def main(argv: list[str] | None = None) -> int:
     except ApiError as exc:
         console.print(f"[red]error:[/] {exc}")
         return 1
+    return 0
+
+
+def _ledger(console: Console, cfg, args) -> int:
+    from datetime import timezone
+    from rich.table import Table
+    store = Store(cfg.db_path)
+    try:
+        led = Ledger(store.conn)
+        if args.settle:
+            n = led.settle_open(datetime.now(timezone.utc))
+            console.print(f"settled {n} entr{'y' if n == 1 else 'ies'} from Polymarket resolutions")
+        rows, s = led.rows(), led.summary()
+        if not rows:
+            console.print("The ledger is empty. Run `pm_edges edges ... --ledger` before kickoff to paper-trade the flagged edges.")
+            return 0
+        t = Table(title="Paper trades", title_justify="left")
+        for c in ("game", "bet", "ask", "fair now", "clv", "status", "result", "pnl $"):
+            t.add_column(c, justify="left" if c in ("game", "bet", "status") else "right")
+        for r in rows:
+            clv = (r["clv"] if r["clv"] is not None else (r["fair_last"] - r["ask"] if r["fair_last"] is not None else None))
+            t.add_row(r["game_id"], f"{r['question'][:40]} / {r['outcome']}", f"{r['ask']:.3f}",
+                      "-" if r["fair_last"] is None else f"{r['fair_last']:.3f}", "-" if clv is None else f"{clv * 100:+.1f}",
+                      r["status"], "-" if r["result"] is None else f"{r['result']:g}", "-" if r["pnl"] is None else f"{r['pnl']:+.2f}")
+        console.print(t)
+        console.print(f"{s.entries} paper trades, {s.settled} settled. Closing-line value (points per share): "
+                      + ("n/a" if s.mean_clv is None else f"{s.mean_clv * 100:+.2f} ± {((s.clv_se or 0) * 100):.2f}"
+                         + (f" (t = {s.clv_t:.1f})" if s.clv_t is not None else ""))
+                      + ("" if s.roi is None else f"; ROI {s.roi:+.1%} on ${s.staked:.0f} staked"))
+        if s.settled < 30:
+            console.print("[dim]Fewer than 30 settled trades: treat these numbers as anecdotes.[/]")
+        if args.csv:
+            import csv
+            args.csv.parent.mkdir(parents=True, exist_ok=True)
+            with args.csv.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(rows[0]))
+                w.writeheader()
+                w.writerows(rows)
+            console.print(f"CSV: {args.csv}")
+    finally:
+        store.close()
     return 0
 
 

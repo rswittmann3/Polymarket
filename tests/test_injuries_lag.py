@@ -64,3 +64,23 @@ def test_lag_study_price_lookup_and_book_fair_value():
     assert line == -4.5 and 0.5 < p < 0.55
     assert lag.fair_at({}, "totals", "NYK") is None
     assert lag.team_is_home("Spread: Knicks (-4.5)", "NYK") and not lag.team_is_home("Spread: 76ers (+4.5)", "NYK")
+
+
+def test_gap_rule_buys_the_cheap_side_and_scores_it_against_the_close():
+    import pandas as pd
+    lag = _lag()
+    rows = pd.DataFrame([
+        {"game": "A@B", "kind": "totals", "ts": "2026-10-20T20:00:00+00:00", "market_id": "7", "book": 0.56, "hours_to_tip": 3.0},
+        {"game": "A@B", "kind": "totals", "ts": "2026-10-20T20:30:00+00:00", "market_id": "7", "book": 0.58, "hours_to_tip": 2.5},
+        {"game": "A@B", "kind": "totals", "ts": "2026-10-20T21:00:00+00:00", "market_id": "7", "book": 0.60, "hours_to_tip": 2.0}])
+    books = pd.DataFrame([
+        {"ts": "2026-10-20T20:01:00+00:00", "market_id": "7", "buy_avg": 0.52, "buy_filled": True, "sell_avg": 0.51, "sell_filled": True},
+        {"ts": "2026-10-20T20:31:00+00:00", "market_id": "7", "buy_avg": 0.57, "buy_filled": True, "sell_avg": 0.56, "sell_filled": True}])
+    t = lag.gap_rule(rows, books, threshold=0.02)
+    assert len(t) == 1 and t.iloc[0]["side"] == "yes" and t.iloc[0]["edge_at_entry"] == pytest.approx(0.04)
+    assert t.iloc[0]["clv"] == pytest.approx(0.60 - 0.52)                       # the book later agreed and then some
+    assert lag.gap_rule(rows, books, threshold=0.05).empty                      # nothing clears a 5-point bar
+    sell = lag.gap_rule(rows.assign(book=[0.40, 0.42, 0.38]), books.assign(sell_avg=[0.47, 0.48]), threshold=0.02)
+    assert sell.iloc[0]["side"] == "no" and sell.iloc[0]["cost"] == pytest.approx(0.53)
+    s = lag.summarize_trades(t)
+    assert s["trades"] == 1 and s["share_beating_close"] == 1.0 and s["share_of_edge_that_held"] == pytest.approx(2.0)

@@ -132,10 +132,60 @@ def build_rows(min_bars: int = 3) -> pd.DataFrame:
                 pm_p = pm_price_at(hist, ts.timestamp())
                 if f is None or pm_p is None:
                     continue
-                rows.append({"game": f"{away}@{home}", "kind": kind, "ts": s["ts"], "hours_to_tip": (tip - ts).total_seconds() / 3600,
+                rows.append({"game": f"{away}@{home}", "kind": kind, "ts": s["ts"], "market_id": str(m["id"]), "hours_to_tip": (tip - ts).total_seconds() / 3600,
                              "pm_line": line, "pin_line": f[0], "volume": m.get("volumeNum"),
                              "book": models[kind].convert(f[0], f[1], line), "pm": (1 - pm_p) if flip else pm_p})
     return pd.DataFrame(rows)
+
+
+def load_books() -> pd.DataFrame:
+    """Polymarket order-book quotes the poller recorded (best bid/ask and the average price of a $50 fill)."""
+    path = DATA / "timeline.jsonl"
+    rows = [json.loads(l) for l in path.read_text().splitlines() if '"src": "pm_book"' in l]
+    return pd.DataFrame(rows)
+
+
+def gap_rule(rows: pd.DataFrame, books: pd.DataFrame, threshold: float = 0.02, window_min: float = 6.0, fee: float = 0.0) -> pd.DataFrame:
+    """Buy whichever side of a Polymarket market is cheaper than Pinnacle's no-vig price by at least `threshold`,
+    at the average price of a $50 fill, once per game and market kind (the first bar that qualifies). Score each
+    entry by closing-line value: Pinnacle's last pre-tip fair value for that side minus what it cost."""
+    if rows.empty or books.empty:
+        return pd.DataFrame()
+    books = books.assign(t=pd.to_datetime(books["ts"], utc=True))
+    out = []
+    for (game, kind), d in rows.sort_values("ts").groupby(["game", "kind"]):
+        d = d.reset_index(drop=True)
+        close = d["book"].iloc[-1]
+        for _, r in d.iloc[:-1].iterrows():
+            t = pd.Timestamp(r["ts"]).tz_convert("UTC") if pd.Timestamp(r["ts"]).tzinfo else pd.Timestamp(r["ts"], tz="UTC")
+            q = books[(books["market_id"].astype(str) == r["market_id"]) & ((books["t"] - t).abs() <= pd.Timedelta(minutes=window_min))]
+            if q.empty:
+                continue
+            q = q.iloc[(q["t"] - t).abs().argmin():][:1].iloc[0]
+            options = []
+            if q["buy_filled"] and q["buy_avg"] is not None and not pd.isna(q["buy_avg"]):
+                options.append(("yes", q["buy_avg"] + fee, r["book"] - q["buy_avg"] - fee, close))
+            if q["sell_filled"] and q["sell_avg"] is not None and not pd.isna(q["sell_avg"]):
+                options.append(("no", 1 - q["sell_avg"] + fee, q["sell_avg"] - r["book"] - fee, 1 - close))
+            best = max(options, key=lambda o: o[2], default=None)
+            if best and best[2] >= threshold:
+                out.append({"game": game, "kind": kind, "ts": r["ts"], "side": best[0], "cost": best[1], "edge_at_entry": best[2],
+                            "fair_close": best[3], "clv": best[3] - best[1], "hours_to_tip": r["hours_to_tip"]})
+                break
+    return pd.DataFrame(out)
+
+
+def summarize_trades(t: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> dict:
+    if t.empty:
+        return {"trades": 0}
+    rng = np.random.default_rng(seed)
+    games = t["game"].unique()
+    by = {g: t[t["game"] == g]["clv"].to_numpy() for g in games}
+    means = [np.concatenate([by[g] for g in rng.choice(games, len(games))]).mean() for _ in range(n_boot)]
+    return {"trades": int(len(t)), "games": int(len(games)), "mean_edge_at_entry": float(t["edge_at_entry"].mean()),
+            "mean_clv": float(t["clv"].mean()), "clv_ci95": np.percentile(means, [2.5, 97.5]).tolist(),
+            "share_beating_close": float((t["clv"] > 0).mean()),
+            "share_of_edge_that_held": float(t["clv"].mean() / t["edge_at_entry"].mean())}
 
 
 def ols(y, X):
@@ -180,6 +230,10 @@ def analyze() -> dict:
     if len(big):
         out["after_big_book_move"] = {"n": int(len(big)), "pm_follows_same_bar": float((np.sign(big["d_pm"]) == np.sign(big["d_book"])).mean()),
                                       "share_of_move_same_bar": float((big["d_pm"] * np.sign(big["d_book"])).mean() / big["d_book"].abs().mean())}
+    books = load_books()
+    out["gap_rule"] = {}
+    for thr in (0.01, 0.02, 0.03):
+        out["gap_rule"][f"{thr:.2f}"] = summarize_trades(gap_rule(df, books, thr))
     p.to_csv(DATA / "rows.csv", index=False)
     (DATA / "results.json").write_text(json.dumps(out, indent=1))
     return out

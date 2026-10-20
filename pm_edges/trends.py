@@ -103,14 +103,16 @@ def history_frames(data_dir: Path = Path("data"), lg: str = "nba") -> tuple[pd.D
     return games, pd.read_pickle(team_path)
 
 
-def verdict(r: A.Result) -> str:
+def verdict(r: A.Result, q: float | None = None) -> str:
+    """`q` is the Benjamini-Hochberg false-discovery rate across the whole library table."""
     d = r.wins + r.losses
     if d < 30:
         return "too few games"
-    if r.p_vs_breakeven < 0.01:
-        return "profitable here; see the multiple-testing note"
+    q = r.p_vs_breakeven if q is None else q
+    if q < 0.05:
+        return "holds up after correcting for the number of angles tried"
     if r.p_vs_breakeven < 0.05:
-        return "mildly above break-even (1 in 20 by luck)"
+        return "looks good alone, not after correcting for the number of angles tried"
     if r.win_pct < 0.5:
         return "leans the other way"
     return "no edge visible"
@@ -175,20 +177,23 @@ def run(console: Console, league: str, away: str, home: str, when: date, spread:
                   f"(history: {count:,} {lg.key.upper()} games, {int(t['season'].min())}-{int(t['season'].max())} seasons)")
     _situation(console, rows, away, home)
 
-    table = Table(title="Situational angles", title_justify="left")
-    for c in ("angle", "bet", "active", "record", "ROI", "games", "other side", "verdict"):
-        table.add_column(c, justify="right" if c in ("ROI", "games") else "left", overflow="fold", min_width=12 if c == "angle" else None)
+    results = []
     for name, q, kind in LIBRARY[lg.key]:
         who = A.active_teams(rows, q)
         if kind == "total":
             u, o = A.evaluate(t, q, "under"), A.evaluate(t, q, "over")
             best, label, other = (u, "Under", o) if u.win_pct >= o.win_pct else (o, "Over", u)
-            active = "[green]yes[/]" if who else "no"
-            table.add_row(name, label, active, _fmt(best), f"{best.roi:+.0%}", str(best.n), _fmt(other), verdict(best))
+            p = min(1.0, 2 * best.p_vs_breakeven)                         # we picked the better of two sides
+            results.append((name, label, "[green]yes[/]" if who else "no", best, _fmt(best), _fmt(other), p))
         else:
             r = A.evaluate(t, q, kind)
-            active = f"[green]{', '.join(who)}[/]" if who else "no"
-            table.add_row(name, "ATS" if kind == "ats" else "ML", active, _fmt(r), f"{r.roi:+.0%}", str(r.n), _flip(r), verdict(r))
+            results.append((name, "ATS" if kind == "ats" else "ML", f"[green]{', '.join(who)}[/]" if who else "no", r, _fmt(r), _flip(r), r.p_vs_breakeven))
+    qvals = A.bh_adjust([r[6] for r in results])
+    table = Table(title="Situational angles", title_justify="left")
+    for c in ("angle", "bet", "active", "record", "ROI", "games", "other side", "q", "verdict"):
+        table.add_column(c, justify="right" if c in ("ROI", "games", "q") else "left", overflow="fold", min_width=12 if c == "angle" else None)
+    for (name, label, active, r, rec, other, p), q in zip(results, qvals):
+        table.add_row(name, label, active, rec, f"{r.roi:+.0%}", str(r.n), other, f"{q:.2f}", verdict(r, q))
     console.print(table)
     console.print("[dim]Each row is one pre-written angle, but a total row shows whichever side did better, and "
                   f"there are {len(LIBRARY[lg.key])} rows: expect a few to look good by luck. In a shuffled-outcome "

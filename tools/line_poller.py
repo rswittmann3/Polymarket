@@ -3,6 +3,7 @@
 Three sources are polled in a loop and appended to data/lag/timeline.jsonl:
   * ESPN's DraftKings current and opening line for every scheduled NBA/NHL game (free, every --every minutes)
   * ESPN injury reports (all teams, written when a player's status changes) and NHL probable starting goalies
+  * Polymarket order books (best bid/ask and the cost of a $50 fill) for the two busiest spread and total markets per NBA game
   * Pinnacle's current spread and total for NBA from The Odds API (2 credits per poll, every --pinnacle-every minutes,
     stopped when the remaining credits fall below --keep)
 
@@ -23,6 +24,7 @@ import httpx
 
 from pm_edges import injuries as I
 from pm_edges import slate as S
+from pm_edges.polymarket import parse_book, walk_book
 from pm_edges.teams import league
 
 OUT = Path("data/lag/timeline.jsonl")
@@ -68,6 +70,62 @@ def poll_news(seen: set, f, first: bool) -> int:
     return n
 
 
+_events: dict[tuple, tuple[float, dict | None]] = {}
+
+
+def _get(url: str, params: dict) -> object | None:
+    try:
+        r = httpx.get(url, params=params, headers={"User-Agent": "Mozilla/5.0 (research; pm_edges)"}, timeout=30)
+        return r.json() if r.status_code == 200 else None
+    except httpx.HTTPError:
+        return None
+
+
+def pm_event(away: str, home: str, tip: datetime) -> dict | None:
+    """The Polymarket NBA event for a game, refreshed hourly so new lines appear."""
+    key = (away, home, tip.date())
+    cached = _events.get(key)
+    if cached and time.time() - cached[0] < 3600:
+        return cached[1]
+    local = tip.astimezone(timezone(timedelta(hours=-4)))
+    ev = None
+    for h in {home.lower(), {"GSW": "gs", "NOP": "no", "SAS": "sa", "NYK": "ny"}.get(home, home).lower()}:
+        for day in (local.date(), local.date() + timedelta(days=1)):
+            d = _get("https://gamma-api.polymarket.com/events", {"slug": f"nba-{away.lower()}-{h}-{day:%Y-%m-%d}"})
+            if d:
+                ev = d[0]
+                break
+        if ev:
+            break
+    _events[key] = (time.time(), ev)
+    return ev
+
+
+def poll_pm_books(f, tip_by_game: dict, dollars: float = 50.0) -> int:
+    """Best bid/ask and the cost of a $50 fill for the two highest-volume spread and total markets of each NBA game."""
+    n = 0
+    for (away, home), tip in tip_by_game.items():
+        ev = pm_event(away, home, tip)
+        if ev is None:
+            continue
+        for kind in ("spreads", "totals"):
+            ms = sorted((m for m in ev["markets"] if m.get("sportsMarketType") == kind and m.get("line") is not None
+                         and m.get("acceptingOrders", True) is not False), key=lambda m: -(m.get("volumeNum") or 0))[:2]
+            for m in ms:
+                token = json.loads(m["clobTokenIds"])[0]
+                body = _get("https://clob.polymarket.com/book", {"token_id": token})
+                if not isinstance(body, dict):
+                    continue
+                b = parse_book(body)
+                buy, sell = walk_book(b["asks"], dollars), walk_book(b["bids"], dollars)
+                f.write(json.dumps({"ts": now(), "src": "pm_book", "away": away, "home": home, "kind": kind, "line": m["line"],
+                                    "question": m["question"], "market_id": m["id"], "volume": m.get("volumeNum"),
+                                    "bid": b["bid"], "ask": b["ask"], "bid_size": b["bid_size"], "ask_size": b["ask_size"],
+                                    "buy_avg": buy["avg"], "buy_filled": buy["filled"], "sell_avg": sell["avg"], "sell_filled": sell["filled"]}) + "\n")
+                n += 1
+    return n
+
+
 def poll_pinnacle(key: str, f) -> str | None:
     r = httpx.get("https://api.the-odds-api.com/v4/sports/basketball_nba/odds",
                   params={"apiKey": key, "markets": "spreads,totals", "bookmakers": "pinnacle", "oddsFormat": "american"}, timeout=45)
@@ -102,6 +160,9 @@ def main() -> None:
         t0 = time.time()
         with OUT.open("a") as f:
             counts = {lg: poll_espn(lg, f) for lg in ("nba", "nhl")}
+            tips = {(g["away"], g["home"]): datetime.fromisoformat(g["kickoff"]) for g in S.espn_slate("nba", datetime.now(timezone(timedelta(hours=-5))).date(), 3)
+                    if g.get("kickoff")}
+            counts["pm_books"] = poll_pm_books(f, tips)
             counts["news"] = poll_news(seen, f, first)
             first = False
             if key and t0 >= next_pin and (remaining is None or int(remaining) > a.keep):

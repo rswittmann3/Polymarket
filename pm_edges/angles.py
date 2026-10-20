@@ -248,6 +248,19 @@ def evaluate(t: pd.DataFrame, query: str, bet: str) -> Result:
                   rows["season"].nunique(), binom_p_at_least(w, w + l, 0.5), binom_p_at_least(w, w + l, breakeven), by)
 
 
+def bh_adjust(pvalues: list[float]) -> list[float]:
+    """Benjamini-Hochberg q-values: the false-discovery rate if you call everything at or below each p a finding."""
+    n = len(pvalues)
+    order = sorted(range(n), key=lambda i: pvalues[i])
+    q = [0.0] * n
+    running = 1.0
+    for rank in range(n, 0, -1):
+        i = order[rank - 1]
+        running = min(running, pvalues[i] * n / rank)
+        q[i] = running
+    return q
+
+
 def leave_one_out(t: pd.DataFrame, conditions: list[str], bet: str) -> list[tuple[str, Result]]:
     """Drop each condition in turn: which ones carry the result?"""
     out = []

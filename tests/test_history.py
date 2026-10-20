@@ -296,3 +296,11 @@ def test_rest_edge_win_prob_and_weather_flags():
     assert both.win_prob.sum() == pytest.approx(1.0)
     assert set(t.loc[t.roof == "dome", "dome"]) == {1} and set(t.loc[t.roof == "outdoors", "dome"]) == {0}
     assert set(t.loc[t.weekday == "Thursday", "thu"]) == {1}
+
+
+def test_benjamini_hochberg_adjustment():
+    q = A.bh_adjust([0.001, 0.01, 0.03, 0.5])
+    assert q == pytest.approx([0.004, 0.02, 0.04, 0.5])
+    assert A.bh_adjust([0.04]) == [0.04]
+    q = A.bh_adjust([0.2, 0.01, 0.2])
+    assert q[1] == pytest.approx(0.03) and all(v >= p for v, p in zip(q, [0.2, 0.01, 0.2]))

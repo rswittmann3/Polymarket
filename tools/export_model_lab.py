@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 NAMES = {"nfl": "NFL", "nba": "NBA", "nhl": "NHL"}
@@ -40,6 +41,10 @@ def rows(results: dict, slate: dict) -> dict[str, list[dict]]:
             if isinstance(d, dict) and "slope" in d:
                 slopes.append({"id": f"{lg}|{rel}", "league": NAMES[lg], "relation": rel, "slope": d["slope"], "intercept": d["intercept"],
                                "games": d["n"], "sd": d["sd"]})
+    from pm_edges.angles import bh_adjust
+    qs = bh_adjust([math.erfc(abs(v["t_stat"]) / math.sqrt(2)) for v in verdicts])        # two-sided p from the t-stat
+    for v, q in zip(verdicts, qs):
+        v["q_value"] = q
     games, injuries, goalies = [], [], []
     for i, g in enumerate(slate["games"]):
         gid = f"{g['league']}|{g['date']}|{g['away']}|{g['home']}"
@@ -64,6 +69,26 @@ def rows(results: dict, slate: dict) -> dict[str, list[dict]]:
     return {"injuries": injuries, "goalies": goalies, "verdicts": verdicts, "seasons": seasons, "bets": bets, "calibration": calib, "slopes": slopes, "importances": imps, "slate": games}
 
 
+def ledger_rows(data_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Paper trades and a one-row CLV summary from the pm_edges database (empty lists when nothing is recorded)."""
+    import sqlite3
+    from pm_edges.config import Config
+    from pm_edges.ledger import Ledger
+    cfg = Config(data_dir=data_dir)
+    if not cfg.db_path.exists():
+        return [], []
+    led = Ledger(sqlite3.connect(cfg.db_path))
+    rows = [{"id": str(r["id"]), "game": r["game_id"], "bet": f"{r['question']} / {r['outcome']}", "entered": r["entered_at"][:16].replace("T", " "),
+             "ask": r["ask"], "fair_now": r["fair_last"], "clv_points": 100 * (r["clv"] if r["clv"] is not None else (r["fair_last"] - r["ask"]) if r["fair_last"] is not None else 0),
+             "status": r["status"], "result": r["result"], "pnl": r["pnl"]} for r in led.rows()]
+    if not rows:
+        return [], []
+    s = led.summary()
+    pct = lambda v: None if v is None else 100 * v
+    return rows, [{"id": "summary", "entries": s.entries, "settled": s.settled, "mean_clv_points": pct(s.mean_clv), "clv_se_points": pct(s.clv_se),
+                   "t_stat": s.clv_t, "beat_close_pct": pct(s.beat_close), "roi_pct": pct(s.roi), "pnl": s.pnl}]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -72,7 +97,9 @@ def main() -> None:
     slate = json.loads((a.data_dir / "model" / "slate.json").read_text())
     out = a.data_dir / "model" / "lab"
     out.mkdir(parents=True, exist_ok=True)
-    for name, r in rows(results, slate).items():
+    out_rows = rows(results, slate)
+    out_rows["ledger"], out_rows["clv_summary"] = ledger_rows(a.data_dir)
+    for name, r in out_rows.items():
         (out / f"{name}.json").write_text(json.dumps(r))
         print(name, len(r))
     print("generated", results["generated"])
