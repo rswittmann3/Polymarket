@@ -94,7 +94,7 @@ def team_is_home(question: str, home: str) -> bool:
     return NBA.team_from_text(question.split(":")[1].split("(")[0]) == home
 
 
-def build_rows() -> pd.DataFrame:
+def build_rows(min_bars: int = 3) -> pd.DataFrame:
     cfg = Config().apply_league("nba")
     models = {"spreads": model_for("spread", cfg), "totals": model_for("total", cfg)}
     pins = [json.loads(l) for l in (DATA / "timeline.jsonl").read_text().splitlines() if '"src": "pinnacle"' in l]
@@ -106,7 +106,7 @@ def build_rows() -> pd.DataFrame:
     for (away, home, commence), series in games.items():
         tip = utc(commence)
         series = sorted((s for s in series if utc(s["ts"]) < tip - timedelta(minutes=5)), key=lambda s: s["ts"])
-        if len(series) < 3:
+        if len(series) < min_bars:
             continue
         ev = pm_event(away, home, tip)
         if ev is None:
@@ -146,7 +146,9 @@ def analyze() -> dict:
     df = build_rows()
     if df.empty:
         raise SystemExit("no rows yet: let the poller run through some games first")
-    df = df.sort_values(["game", "kind", "ts"]).reset_index(drop=True)
+    df = df[df["volume"].fillna(0) >= 1000].sort_values(["game", "kind", "ts"]).reset_index(drop=True)      # thin markets carry stale quotes
+    if df.empty:
+        raise SystemExit("no market with at least $1,000 of volume yet")
     deltas = []
     for (g, k), d in df.groupby(["game", "kind"]):
         d = d.reset_index(drop=True)
