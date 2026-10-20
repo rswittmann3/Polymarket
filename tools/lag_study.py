@@ -188,6 +188,60 @@ def summarize_trades(t: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> dict
             "share_of_edge_that_held": float(t["clv"].mean() / t["edge_at_entry"].mean())}
 
 
+def injury_event_study(timeline: Path | None = None, windows=(30, 60, 120), key_only: bool = True, value_of=None) -> dict:
+    """What Pinnacle's line did after a team's injury report changed, oriented against the injured team
+    (a positive spread move is the line moving away from that team; a total move is raw). Baseline rows from the
+    poller's first scan are skipped: only changes seen while it ran count.
+
+    `value_of(athlete_id, league)` returns an ESPN per-game line used to decide whether the player is "key";
+    the default looks it up from ESPN and caches it."""
+    from pm_edges import injuries as I
+    value_of = value_of or (lambda aid, lg: I.player_value(lg, aid))
+    path = timeline or DATA / "timeline.jsonl"
+    rows = [json.loads(l) for l in path.read_text().splitlines() if '"src": "pinnacle"' in l or '"src": "injury"' in l]
+    pins: dict[tuple, list[dict]] = {}
+    for r in rows:
+        if r["src"] == "pinnacle" and r.get("home"):
+            pins.setdefault(r["home"], []).append(r)
+            pins.setdefault(r["away"], []).append(r)
+    events = [r for r in rows if r["src"] == "injury" and not r.get("baseline") and r["league"] == "nba"
+              and r["status"] in ("Out", "Doubtful", "Day-To-Day", "Questionable") and r.get("team") in pins]
+    out = {"events": 0, "key_events": 0, "windows": {}}
+    moves = {w: {"spread": [], "total": []} for w in windows}
+    for ev in events:
+        out["events"] += 1
+        key = I.is_key("nba", ev["status"], ev.get("pos"), value_of(ev["athlete_id"], "nba") if ev.get("athlete_id") else {})
+        if key_only and not key:
+            continue
+        out["key_events"] += 1
+        t0 = utc(ev["ts"])
+        series = sorted(pins[ev["team"]], key=lambda r: r["ts"])
+        upcoming = [r for r in series if utc(r["commence"]) > t0]
+        if not upcoming:
+            continue
+        game = (upcoming[0]["home"], upcoming[0]["away"], upcoming[0]["commence"])
+        gs = [r for r in series if (r["home"], r["away"], r["commence"]) == game]
+        before = [r for r in gs if utc(r["ts"]) <= t0]
+        if not before:
+            continue
+        for w in windows:
+            after = [r for r in gs if abs((utc(r["ts"]) - t0).total_seconds() / 60 - w) <= 12 and utc(r["ts"]) < utc(r["commence"])]
+            if not after:
+                continue
+            a, b = before[-1], after[0]
+            fa, fb = fair_at(a, "spreads", game[0]), fair_at(b, "spreads", game[0])
+            if fa and fb:
+                sign = 1 if ev["team"] == game[0] else -1                     # injured team at home: the home spread rising hurts them
+                moves[w]["spread"].append(sign * (fb[0] - fa[0]))
+            ta, tb = fair_at(a, "totals", game[0]), fair_at(b, "totals", game[0])
+            if ta and tb:
+                moves[w]["total"].append(tb[0] - ta[0])
+    for w, d in moves.items():
+        out["windows"][f"{w}min"] = {k: {"n": len(v), "mean_move": float(np.mean(v)) if v else None,
+                                         "share_moved": float(np.mean([x != 0 for x in v])) if v else None} for k, v in d.items()}
+    return out
+
+
 def ols(y, X):
     return np.linalg.lstsq(np.column_stack(X), y, rcond=None)[0]
 
@@ -234,6 +288,10 @@ def analyze() -> dict:
     out["gap_rule"] = {}
     for thr in (0.01, 0.02, 0.03):
         out["gap_rule"][f"{thr:.2f}"] = summarize_trades(gap_rule(df, books, thr))
+    try:
+        out["injury_events"] = injury_event_study()
+    except (OSError, KeyError, ValueError) as exc:
+        out["injury_events"] = {"error": str(exc)}
     p.to_csv(DATA / "rows.csv", index=False)
     (DATA / "results.json").write_text(json.dumps(out, indent=1))
     return out

@@ -84,3 +84,26 @@ def test_gap_rule_buys_the_cheap_side_and_scores_it_against_the_close():
     assert sell.iloc[0]["side"] == "no" and sell.iloc[0]["cost"] == pytest.approx(0.53)
     s = lag.summarize_trades(t)
     assert s["trades"] == 1 and s["share_beating_close"] == 1.0 and s["share_of_edge_that_held"] == pytest.approx(2.0)
+
+
+def test_injury_event_study_orients_the_move_against_the_injured_team(tmp_path):
+    import json
+    lag = _lag()
+
+    def pin(ts, spread, total):
+        return {"ts": ts, "src": "pinnacle", "commence": "2026-10-21T23:00:00+00:00", "home": "NYK", "away": "PHI",
+                "spreads": [{"name": "New York Knicks", "price": -110, "point": spread}, {"name": "Philadelphia 76ers", "price": -110, "point": -spread}],
+                "totals": [{"name": "Over", "price": -110, "point": total}, {"name": "Under", "price": -110, "point": total}]}
+    lines = [pin("2026-10-21T15:00:00+00:00", -4.5, 220.5),
+             {"ts": "2026-10-21T15:20:00+00:00", "src": "injury", "baseline": True, "league": "nba", "team": "NYK", "athlete_id": "1", "status": "Out", "pos": "PG"},
+             {"ts": "2026-10-21T15:40:00+00:00", "src": "injury", "baseline": False, "league": "nba", "team": "NYK", "athlete_id": "1", "status": "Out", "pos": "PG"},
+             pin("2026-10-21T16:10:00+00:00", -2.5, 218.5)]
+    path = tmp_path / "t.jsonl"
+    path.write_text("\n".join(json.dumps(l) for l in lines))
+    out = lag.injury_event_study(path, windows=(30,), value_of=lambda aid, lg: {"minutes": 34, "points": 26})
+    assert out["events"] == 1 and out["key_events"] == 1                     # the baseline row is not an event
+    w = out["windows"]["30min"]
+    assert w["spread"]["n"] == 1 and w["spread"]["mean_move"] == pytest.approx(2.0)      # Knicks at home: -4.5 to -2.5 hurts them by 2
+    assert w["total"]["mean_move"] == pytest.approx(-2.0)
+    none = lag.injury_event_study(path, windows=(30,), value_of=lambda aid, lg: {"minutes": 5, "points": 2})
+    assert none["key_events"] == 0 and none["windows"]["30min"]["spread"]["n"] == 0
