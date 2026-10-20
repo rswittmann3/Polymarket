@@ -66,19 +66,27 @@ def compute_edges(ofs: list[OutcomeFair], cfg: Config, signals: dict[tuple, list
             why = "model-converted line (use --allow-model to flag)"
         elif edge < cfg.min_edge:
             why = f"edge below {cfg.min_edge * 100:.1f} pts"
+        elif fair.source == "books" and len(fair.books) < cfg.min_books_to_flag \
+                and not any(cfg.is_sharp(b.book) for b in fair.books):
+            why = f"fair value rests on one soft book ({fair.books_label})"
         elif cfg.confirm_sharp and pin_edge is not None and pin_edge < cfg.min_edge:
             why = f"Pinnacle does not confirm ({pin_edge * 100:+.1f} pts vs Pinnacle)"
 
+        # shares that still clear min_edge, counting at most max_stake dollars
         size_with_edge = None
         if fair.prob is not None and o.ask_levels:
-            size_with_edge = sum(
-                s for p, s in o.ask_levels
-                if fair.prob - p - fee_per_share(p, rate, m.fee_exponent) >= cfg.min_edge)
+            size_with_edge, budget = 0.0, cfg.max_stake
+            for p, s in o.ask_levels:
+                if fair.prob - p - fee_per_share(p, rate, m.fee_exponent) < cfg.min_edge or budget <= 0:
+                    continue
+                take = min(s, budget / p)
+                size_with_edge += take
+                budget -= take * p
 
         stake = None
         if bankroll and not why and fair.prob is not None and ask is not None:
             f = kelly_fraction(fair.prob, ask + (fee or 0.0)) * cfg.kelly_fraction
-            stake = round(bankroll * min(f, cfg.kelly_cap), 2)
+            stake = round(min(bankroll * min(f, cfg.kelly_cap), cfg.max_stake), 2)
 
         line = o.selection.line if o.selection else None
         sigs = (signals.get(o.selection.group_key(), []) if o.selection else []) \

@@ -70,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="periods to request odds for (default all; fewer = fewer credits)")
     e.add_argument("--no-history", action="store_true", help="skip CLOB price history (drift)")
     e.add_argument("--snapshot", action="store_true", help="also store this run as a snapshot")
+    e.add_argument("--max-stake", type=float, help="largest order the model considers, in dollars (default 50)")
     e.add_argument("--kelly", action="store_true", help="show a capped quarter-Kelly stake")
     e.add_argument("--bankroll", type=float, help="bankroll for --kelly")
     e.add_argument("--html", action="store_true", help="also write a self-contained HTML report")
@@ -89,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         fee_rate_override=getattr(args, "fee_rate", None),
         regions=getattr(args, "regions", None),
         scope=getattr(args, "scope", None),
+        max_stake=getattr(args, "max_stake", None),
     )
     if getattr(args, "allow_model", False):
         cfg.allow_model = True

@@ -1,7 +1,7 @@
 """Live check: are the player props offered on Polymarket, and how much would it cost to enter?
 
     python tools/prop_liquidity.py --away WAS --home SF --date 2026-10-19 --kickoff 20:15 \
-        [--stakes 25,100,250] [--out data/board/prop_liquidity.json]
+        [--stakes 5,25,50] [--out data/board/prop_liquidity.json]
 
 Fetches fresh Gamma markets and CLOB order books (no Odds API credits), then for
 every player-prop outcome walks the ask book for each stake and reports the
@@ -36,12 +36,15 @@ def main() -> None:
     ap.add_argument("--home", required=True)
     ap.add_argument("--date", required=True, type=date.fromisoformat)
     ap.add_argument("--kickoff", type=time.fromisoformat)
-    ap.add_argument("--stakes", default="25,100,250")
+    ap.add_argument("--stakes", default="5,25,50", help="order sizes in dollars; none may exceed --max-stake")
+    ap.add_argument("--max-stake", type=float, default=50.0)
     ap.add_argument("--min-liquidity", type=float, default=0.0)
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
     ap.add_argument("--out", type=Path, default=Path("data/board/prop_liquidity.json"))
     args = ap.parse_args()
     stakes = [float(s) for s in args.stakes.split(",")]
+    if max(stakes) > args.max_stake:
+        ap.error(f"stakes above ${args.max_stake:g} are not modelled (raise --max-stake to override)")
 
     cfg = load_config(data_dir=args.data_dir)
     spec = GameSpec("nfl", args.away, args.home, args.date, args.kickoff)
@@ -86,7 +89,7 @@ def main() -> None:
                 flags.append("no ask: cannot buy")
             if o.ask is not None and o.ask >= 0.97:
                 flags.append("ask 97¢ or more: nothing left to win")
-            if depth_best is not None and depth_best < 50:
+            if depth_best is not None and depth_best < stakes[-1]:
                 flags.append(f"only ${depth_best:,.0f} at best ask")
             if spread_c is not None and spread_c > 3:
                 flags.append(f"{spread_c:g}¢ spread")
@@ -94,11 +97,11 @@ def main() -> None:
                 flags.append("no bid: exit only by holding")
             elif bid_depth < 50:
                 flags.append(f"thin bids (${bid_depth:,.0f} in top 3)")
-            f100 = fills.get("100")
-            if f100 and not f100["filled"]:
-                flags.append("cannot fill $100")
-            elif f100 and f100["slip_c"] is not None and f100["slip_c"] > 1:
-                flags.append(f"$100 slips {f100['slip_c']:g}¢")
+            top = fills.get(str(int(stakes[-1])))
+            if top and not top["filled"]:
+                flags.append(f"cannot fill ${stakes[-1]:g}")
+            elif top and top["slip_c"] is not None and top["slip_c"] > 1:
+                flags.append(f"${stakes[-1]:g} slips {top['slip_c']:g}¢")
             if m.liquidity < 1000:
                 flags.append(f"market liquidity ${m.liquidity:,.0f}")
             rows.append({

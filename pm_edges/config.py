@@ -78,6 +78,15 @@ class Config:
     # Also require Pinnacle's own no-vig price to clear min_edge (when Pinnacle
     # quotes the market). Soft books drag the consensus away from the sharpest line.
     confirm_sharp: bool = False
+    # A fair value built from a single soft book is not trusted to flag: that book can
+    # be the outlier on the line (FanDuel's McCaffrey rushing 59.5 while Pinnacle,
+    # DraftKings and BetMGM all posted 61.5-62.5). Pinnacle alone is enough.
+    min_books_to_flag: int = 2
+
+    # Stake size. Nothing in the model looks at an order bigger than max_stake:
+    # fills, sizes "with edge" and Kelly stakes all stop there.
+    max_stake: float = 50.0         # dollars
+    default_stake: float = 5.0      # the order size the reports are written for
 
     # Kelly (off unless --kelly)
     kelly_fraction: float = 0.25

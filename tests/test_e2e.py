@@ -1,5 +1,6 @@
 """End-to-end on synthetic fixtures: discovery -> books -> fair -> edges -> report."""
 import csv
+import pytest
 
 from rich.console import Console
 
@@ -43,7 +44,7 @@ def test_end_to_end_flags_designed_edge(spec, cfg, fake_apis, tmp_path):
     e = flagged[0]
     assert e.ask == 0.40 and e.fair.prob == 0.5
     assert abs(e.edge - (0.5 - 0.40 - 0.05 * 0.4 * 0.6)) < 1e-9
-    assert e.size_at_ask == 300 and e.size_with_edge == 800    # .40 and .42 levels clear 3 pts
+    assert e.size_at_ask == 300 and e.size_with_edge == 125    # $50 cap at 40c; the 42c level is not reached
 
     # liquidity filter and closed markets
     questions = {m.question for m in a.checked}
@@ -176,3 +177,33 @@ def test_drift_skipped_on_illiquid_or_wide_markets(spec, cfg, fake_apis):
     cfg.drift_min_liquidity = 10_000_000
     _, b = run_all(spec, cfg, fake_apis)
     assert not any(s.kind == "pm_drift" for s in b.signals)
+
+
+def test_max_stake_caps_size_with_edge_and_kelly(spec, cfg, fake_apis):
+    cfg.max_stake = 200.0                 # two levels (.40 then .42) now fit under the cap
+    _, a = run_all(spec, cfg, fake_apis)
+    e = next(x for x in a.edges if x.flagged)
+    assert e.size_with_edge == pytest.approx(300 + (200 - 300 * 0.40) / 0.42)
+    cfg.max_stake = 5.0                   # a $5 order: 12.5 shares at 40c
+    _, b = run_all(spec, cfg, fake_apis)
+    assert next(x for x in b.edges if x.flagged).size_with_edge == pytest.approx(12.5)
+    cfg.max_stake = 50.0
+    from pm_edges.edges import compute_edges
+    ofs = a.outcome_fairs
+    rows = compute_edges(ofs, cfg, bankroll=1_000_000)            # huge bankroll: Kelly cap would be $20,000
+    assert max(r.kelly_stake for r in rows if r.kelly_stake is not None) == 50.0
+
+
+def test_single_soft_book_cannot_flag(spec, cfg, fake_apis):
+    # Daniels' prop is priced by two soft books and flags; with only one of them it must not.
+    props = fake_apis.data["odds_event_main.json"]["bookmakers"]
+    for bm in props:
+        if bm["key"] == "fanduel":
+            bm["markets"] = [m for m in bm["markets"] if m["key"] != "player_pass_yds"]
+    _, a = run_all(spec, cfg, fake_apis)
+    row = next(x for x in a.edges if "Daniels" in x.market.question and x.outcome.name == "Yes")
+    assert row.fair.books_label == "draftkings" and not row.flagged
+    assert "one soft book" in row.why_not
+    cfg.min_books_to_flag = 1
+    _, b = run_all(spec, cfg, fake_apis)
+    assert next(x for x in b.edges if "Daniels" in x.market.question and x.outcome.name == "Yes").flagged

@@ -68,7 +68,8 @@ Useful flags:
 | `--no-alternates` | never request alternate lines (saves credits) |
 | `--no-history` | skip CLOB price history |
 | `--snapshot` (edges) | also store this run as a snapshot |
-| `--kelly --bankroll 1000` | show a quarter-Kelly stake, capped at 2% of bankroll; off by default |
+| `--max-stake 50` | largest order the model considers, in dollars (default 50); caps the "size with edge" column and any Kelly stake |
+| `--kelly --bankroll 1000` | show a quarter-Kelly stake, capped at 2% of bankroll and at `--max-stake`; off by default |
 | `--html` / `--no-csv` | report formats; CSV is written by default to `data/reports/` |
 
 ### Scheduling snapshots
@@ -208,3 +209,11 @@ data/             raw JSON, snapshots.db, reports (gitignored)
 ## Reference sanity check (2026-10-19 WAS @ SF, from the build plan)
 
 Spread SF −7.5 (−110/−110; opened −5.5). Total 52.5 (DraftKings O −105 / U −115) → no-vig about Over 48.9% / Under 51.1%. ML SF about 77–79%. A prediction-market Under 52.5 at about 53.5¢ against a fair value near 51% is **no edge**. The synthetic fixtures reproduce this case, and `tests/test_e2e.py` asserts it.
+
+
+## Small stakes and what the tool refuses to flag
+
+- **Stake cap.** Nothing models an order above `max_stake` (default $50). `tools/prop_liquidity.py` computes fills at $5, $25 and $50 and refuses larger stakes unless you pass `--max-stake`.
+- **One soft book is not enough.** A row only flags when its fair value comes from Pinnacle or at least two books (`min_books_to_flag`). On 2026-10-19 the tool showed McCaffrey rushing Under 59.5 at +2.2 from FanDuel alone, while Pinnacle, DraftKings and BetMGM all posted 61.5 to 62.5. At 59.5 the Under should be below 50%, so the edge was an artifact.
+- **Props resolve differently.** Polymarket resolves a player prop to Under/No if the player is inactive or does not play. Sportsbooks usually refund.
+- **Prop brief tooling.** `tools/prop_liquidity.py` pulls fresh books and walks the ask side per stake; `tools/prop_brief_data.py` joins that with the sportsbook fair values.
