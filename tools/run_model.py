@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 from pm_edges import angles as A
 from pm_edges import injuries as I
@@ -44,6 +44,12 @@ def clean(o):
 
 
 def league_results(lg: str, data_dir: Path) -> tuple[dict, dict]:
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(1):               # one thread per league process: three processes on four cores, no oversubscription
+        return _league_results(lg, data_dir)
+
+
+def _league_results(lg: str, data_dir: Path) -> tuple[dict, dict]:
     games, _ = history_frames(data_dir, lg)
     frame = M.game_frame(A.team_games(games))
     out = {"games": int(len(frame)), "seasons": [int(frame["season"].min()), int(frame["season"].max())],
@@ -151,9 +157,13 @@ def main() -> None:
     args = ap.parse_args()
     results = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "leagues": {}}
     slate = []
+    for lg in args.league:                    # history frames are built (and cached) one league at a time, then the fits run in parallel
+        history_frames(args.data_dir, lg)
+    with ProcessPoolExecutor(len(args.league)) as pool:
+        futures = {lg: pool.submit(league_results, lg, args.data_dir) for lg in args.league}
+        done = {lg: f.result() for lg, f in futures.items()}
     for lg in args.league:
-        print(lg, flush=True)
-        res, ctx = league_results(lg, args.data_dir)
+        res, ctx = done[lg]
         results["leagues"][lg] = res
         slate += slate_rows(lg, ctx, res, args.start, args.days)
     out = args.data_dir / "model"
