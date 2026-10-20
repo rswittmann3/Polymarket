@@ -26,9 +26,9 @@ NFL_TEAMS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "IND": ("Indianapolis Colts", "Indianapolis", "Colts", ()),
     "JAX": ("Jacksonville Jaguars", "Jacksonville", "Jaguars", ("JAC",)),
     "KC": ("Kansas City Chiefs", "Kansas City", "Chiefs", ("KAN",)),
-    "LV": ("Las Vegas Raiders", "Las Vegas", "Raiders", ("LVR",)),
-    "LAC": ("Los Angeles Chargers", "Los Angeles", "Chargers", ()),
-    "LAR": ("Los Angeles Rams", "Los Angeles", "Rams", ("LA",)),
+    "LV": ("Las Vegas Raiders", "Las Vegas", "Raiders", ("LVR", "OAK", "Oakland")),
+    "LAC": ("Los Angeles Chargers", "Los Angeles", "Chargers", ("SD", "San Diego")),
+    "LAR": ("Los Angeles Rams", "Los Angeles", "Rams", ("LA", "STL", "St. Louis")),
     "MIA": ("Miami Dolphins", "Miami", "Dolphins", ()),
     "MIN": ("Minnesota Vikings", "Minnesota", "Vikings", ()),
     "NE": ("New England Patriots", "New England", "Patriots", ("NWE",)),
@@ -75,6 +75,43 @@ NBA_TEAMS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "TOR": ("Toronto Raptors", "Toronto", "Raptors", ()),
     "UTA": ("Utah Jazz", "Utah", "Jazz", ("UTAH",)),
     "WAS": ("Washington Wizards", "Washington", "Wizards", ("WSH",)),
+}
+
+NHL_TEAMS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
+    "ANA": ("Anaheim Ducks", "Anaheim", "Ducks", ()),
+    "BOS": ("Boston Bruins", "Boston", "Bruins", ()),
+    "BUF": ("Buffalo Sabres", "Buffalo", "Sabres", ()),
+    "CGY": ("Calgary Flames", "Calgary", "Flames", ("CAL",)),
+    "CAR": ("Carolina Hurricanes", "Carolina", "Hurricanes", ()),
+    "CHI": ("Chicago Blackhawks", "Chicago", "Blackhawks", ()),
+    "COL": ("Colorado Avalanche", "Colorado", "Avalanche", ()),
+    "CBJ": ("Columbus Blue Jackets", "Columbus", "Blue Jackets", ("CLB",)),
+    "DAL": ("Dallas Stars", "Dallas", "Stars", ()),
+    "DET": ("Detroit Red Wings", "Detroit", "Red Wings", ()),
+    "EDM": ("Edmonton Oilers", "Edmonton", "Oilers", ()),
+    "FLA": ("Florida Panthers", "Florida", "Panthers", ()),
+    "LAK": ("Los Angeles Kings", "Los Angeles", "Kings", ("LA",)),
+    "MIN": ("Minnesota Wild", "Minnesota", "Wild", ()),
+    "MTL": ("Montréal Canadiens", "Montreal", "Canadiens", ("Montréal", "MON")),
+    "NSH": ("Nashville Predators", "Nashville", "Predators", ("NAS",)),
+    "NJD": ("New Jersey Devils", "New Jersey", "Devils", ("NJ",)),
+    "NYI": ("New York Islanders", "New York", "Islanders", ("NYIslanders",)),
+    "NYR": ("New York Rangers", "New York", "Rangers", ("NYRangers",)),
+    "OTT": ("Ottawa Senators", "Ottawa", "Senators", ()),
+    "PHI": ("Philadelphia Flyers", "Philadelphia", "Flyers", ()),
+    "PIT": ("Pittsburgh Penguins", "Pittsburgh", "Penguins", ()),
+    "SEA": ("Seattle Kraken", "Seattle", "Kraken", ("SeattleKraken",)),
+    "SJS": ("San Jose Sharks", "San Jose", "Sharks", ("SJ", "SJS")),
+    "STL": ("St. Louis Blues", "St. Louis", "Blues", ("St Louis Blues", "St.Louis")),
+    "TBL": ("Tampa Bay Lightning", "Tampa Bay", "Lightning", ("TB", "TampaBay")),
+    "TOR": ("Toronto Maple Leafs", "Toronto", "Maple Leafs", ()),
+    # Arizona's franchise moved to Utah in 2024, Atlanta's to Winnipeg in 2011: one code each
+    "UTA": ("Utah Mammoth", "Utah", "Mammoth", ("UTAH", "Utah Hockey Club", "ARI", "Arizona", "Coyotes", "Phoenix",
+                                                 "Arizona Coyotes", "PHX")),
+    "VAN": ("Vancouver Canucks", "Vancouver", "Canucks", ()),
+    "VGK": ("Vegas Golden Knights", "Vegas", "Golden Knights", ("VEG", "LV")),
+    "WSH": ("Washington Capitals", "Washington", "Capitals", ("WAS",)),
+    "WPG": ("Winnipeg Jets", "Winnipeg", "Jets", ("ATL", "Atlanta", "Thrashers")),
 }
 
 _AMBIGUOUS_CITIES = {"Los Angeles", "New York"}
@@ -127,6 +164,7 @@ class League:
 LEAGUES: dict[str, League] = {
     "nfl": League("nfl", "americanfootball_nfl", NFL_TEAMS),
     "nba": League("nba", "basketball_nba", NBA_TEAMS),
+    "nhl": League("nhl", "icehockey_nhl", NHL_TEAMS),
 }
 
 

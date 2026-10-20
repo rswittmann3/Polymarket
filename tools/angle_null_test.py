@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from pm_edges import angles as A
+from pm_edges.trends import history_frames
 
 
 def best_of(frame: pd.DataFrame, trials: int, seed: int) -> tuple[int, float, int, int]:
@@ -34,7 +35,7 @@ def main() -> None:
     ap.add_argument("--trials", type=int, default=5000)
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
     args = ap.parse_args()
-    t = pd.read_pickle(args.data_dir / "history" / "team_games.pkl")
+    _, t = history_frames(args.data_dir, "nba")
     openers = t[(t["game_num"] == 1) & (t["kind"] == "reg")].copy()
     t0 = time.time()
     n, best, ge80, ge85 = best_of(openers, args.trials, 7)

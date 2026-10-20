@@ -225,15 +225,36 @@ Spread SF −7.5 (−110/−110; opened −5.5). Total 52.5 (DraftKings O −105
 
 ## Historical trends (`pm_edges trends`)
 
+NBA, NHL and NFL. Fetch the raw files once (they are cached under `data/history/`, which is gitignored), then ask about a game:
+
 ```bash
 pip install -e ".[history]"
-python tools/fetch_history.py sbr            # 2007-08 to 2021-22: scores and closing lines (Sportsbook Reviews Online)
-python tools/fetch_history.py espn           # 2022-23 on, plus the 2019-20 bubble: scores and ESPN BET closing lines
+# NBA: 2007-08 to 2021-22 from Sportsbook Reviews Online, 2022-23 on from ESPN
+python tools/fetch_history.py sbr
+python tools/fetch_history.py espn --league nba --seasons 2023 2024 2025 2026 2027
+# NHL: SBR 2007-08 to 2021-22 (with prices), ESPN scoreboards for every season (overtime/shootout labels), ESPN odds from 2020-21
+python tools/fetch_history.py sbr --league nhl
+python tools/fetch_history.py espn --league nhl --seasons $(seq 2008 2027) --odds-from 2021
+# NFL: nflverse games.csv, 1999 on (closing spread/total/moneyline, weather, roof, rest); also lists the upcoming schedule with lines
+python tools/fetch_history.py nfl
+
+pm_edges trends --league nfl --away NE --home CHI --date 2026-10-22 --wind 18       # lines come from the nflverse schedule
+pm_edges trends --league nhl --away PHI --home BUF --date 2026-10-21 --total 5.5 --home-ml -185 --away-ml 154
 pm_edges trends --league nba --away PHI --home NYK --date 2026-10-20 --spread -4.5 --total 231.5 \
     --angle "at_home == 1 and spread > -7 and spread < 2 and game_num == 1 and prev_vs_opp_post == 1" --bet under --leave-one-out
-python tools/angle_null_test.py              # same search on real vs shuffled outcomes
+python tools/angle_null_test.py              # NBA: the same search on real vs shuffled outcomes
 ```
 
-The history is 24,000+ games with closing spread and total. Two sources disagree by up to a point on about half of games (different books), so an angle that depends on a total or spread sitting within a point of a cutoff is fragile. Features available to `--angle`: `at_home`, `spread`, `total`, `game_num`, `is_opener`, `rest_days`, `b2b`, `prev_win`, `prev_cover`, `prev_over`, `prev_po_wins`, `prev_vs_opp_post`, `prev_vs_opp_days`, `prev_total`, `total_vs_prev`, `prev_reg_win_pct`, `total_vs_avg`, `season` (start year).
+Re-run the `espn` / `nfl` fetch to pull new games; the cached frames rebuild when the raw files are newer. Each league has a library of angles written in advance (`LIBRARY` in `pm_edges/trends.py`): dome/wind/cold, division, Thursday and bye-week games for football; totals, back-to-backs, rest edges, favourites and underdogs for hockey; openers and rest for basketball. The report shows each one's record, the other side's record, whether it is active for this game, and a verdict. `--angle` takes your own filter.
+
+What is in each history and what to be careful about:
+
+| league | games | lines | notes |
+|---|---|---|---|
+| NBA | 24,000+ (2007-08 on) | closing spread/total, open too | two sources can differ by up to a point, so an angle sitting within a point of a cutoff is fragile |
+| NHL | 24,500+ (2007-08 on) | closing total with over/under prices, moneyline | no puck line is modelled, so hockey sides are moneyline bets. Sportsbooks settle totals without the shootout goal, so a shootout game's total is home + away - 1 (ESPN labels these games). ESPN's moneyline field is the puck-line price in 2020-21 and most of 2022-23, so those seasons have no moneyline and drop out of moneyline angles |
+| NFL | 7,300+ (1999 on) | closing spread/total; moneyline and prices from about 2009 | 1999-2008 have no moneyline. `wind` and `temp` are what was recorded at the game; for an upcoming game pass the forecast with `--wind` / `--temp`. `neutral` marks neutral-site games, where "home" is nominal |
+
+Records use the posted price where the history has it (hockey totals and moneylines, football spreads and moneylines since about 2009) and flat -110 otherwise, so ROI is not simply win rate. Features available to `--angle` include `at_home`, `spread`, `total`, `ml`, `win_prob` (no-vig moneyline), `fav`, `game_num`, `is_opener`, `rest_days`, `opp_rest_days`, `rest_edge`, `b2b`, `opp_b2b`, `season_win_pct`, `opp_season_win_pct`, `prev_win`, `prev_cover`, `prev_over`, `prev_margin`, `prev_po_wins`, `prev_vs_opp_post`, `prev_vs_opp_days`, `prev_total`, `total_vs_prev`, `prev_reg_win_pct`, `total_vs_avg`, `kind` (`reg`/`post`), `season` (start year), and for football `week`, `div_game`, `dome`, `temp`, `wind`, `thu`/`mon`/`sun`/`sat`, `hour`, `neutral`, `playoff_round`. Bets are `under`, `over`, `ats` (football and basketball) and `ml`.
 
 How to read an angle: a record is worth something only if (1) it was written down before looking, (2) the sample is large, and (3) it survives dropping any one condition. The library in `pm_edges/trends.py` is written in advance. A filter with seven conditions and 13 games has 13 games of evidence however long the filter is.

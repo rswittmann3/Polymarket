@@ -26,38 +26,82 @@ BREAKEVEN = 110 / 210       # win rate needed at -110
 # features
 # ---------------------------------------------------------------------------
 
-def team_games(games: pd.DataFrame, kinds=("reg", "post", "playin")) -> pd.DataFrame:
-    """One row per team per game, with outcome and situation features."""
-    g = games[games["kind"].isin(kinds)].dropna(subset=["home_pts", "away_pts"]).copy()
+# game-level columns carried onto both teams' rows when the games frame has them
+GAME_EXTRAS = ["week", "playoff_round", "ot", "neutral", "roof", "temp", "wind", "div_game", "weekday", "hour",
+               "over_odds", "under_odds"]
+
+
+def _implied(odds: pd.Series) -> pd.Series:
+    o = pd.to_numeric(odds, errors="coerce")
+    return pd.Series(np.where(o > 0, 100 / (o + 100), -o / (-o + 100)), index=odds.index).where(o.abs() >= 100)
+
+
+def team_games(games: pd.DataFrame, kinds=("reg", "post", "playin"), keep_unplayed: bool = False) -> pd.DataFrame:
+    """One row per team per game, with outcome and situation features.
+
+    `games` has one row per game with lines from the home team's side (home_spread_close,
+    total_close, optionally home_ml/away_ml, *_open, over_odds/under_odds, and league extras)."""
+    g = games[games["kind"].isin(kinds)].copy()
+    if not keep_unplayed:
+        g = g.dropna(subset=["home_pts", "away_pts"])
+    g = g.reset_index(drop=True)
     g["game_id"] = np.arange(len(g))
-    home = pd.DataFrame({
-        "game_id": g["game_id"], "date": g["date"], "season": g["season"], "kind": g["kind"],
-        "team": g["home"], "opp": g["away"], "at_home": 1,
-        "pts_for": g["home_pts"], "pts_against": g["away_pts"],
-        "spread": g["home_spread_close"], "total": g["total_close"],
-        "spread_open": g["home_spread_open"], "total_open": g["total_open"]})
-    away = pd.DataFrame({
-        "game_id": g["game_id"], "date": g["date"], "season": g["season"], "kind": g["kind"],
-        "team": g["away"], "opp": g["home"], "at_home": 0,
-        "pts_for": g["away_pts"], "pts_against": g["home_pts"],
-        "spread": -g["home_spread_close"], "total": g["total_close"],
-        "spread_open": -g["home_spread_open"], "total_open": g["total_open"]})
-    t = pd.concat([home, away], ignore_index=True).sort_values(["team", "date", "game_id"]).reset_index(drop=True)
+
+    def col(name: str) -> pd.Series:
+        return pd.to_numeric(g[name], errors="coerce") if name in g else pd.Series(np.nan, index=g.index)
+
+    def side(home: bool) -> pd.DataFrame:
+        me, you, sign = ("home", "away", 1) if home else ("away", "home", -1)
+        d = {"game_id": g["game_id"], "date": g["date"], "season": g["season"], "kind": g["kind"],
+             "team": g[me], "opp": g[you], "at_home": int(home),
+             "pts_for": col(f"{me}_pts"), "pts_against": col(f"{you}_pts"),
+             "spread": sign * col("home_spread_close"), "total": col("total_close"),
+             "spread_open": sign * col("home_spread_open"), "total_open": col("total_open"),
+             "ml": col(f"{me}_ml"), "opp_ml": col(f"{you}_ml"), "spread_odds": col(f"{me}_spread_odds")}
+        # totals are settled on the sportsbook total (a hockey shootout goal is not counted)
+        d["points"] = col("points") if "points" in g else col("home_pts") + col("away_pts")
+        for c in GAME_EXTRAS:
+            if c in g:
+                d[c] = g[c]
+        return pd.DataFrame(d)
+
+    t = pd.concat([side(True), side(False)], ignore_index=True).sort_values(["team", "date", "game_id"]).reset_index(drop=True)
     t["margin"] = t["pts_for"] - t["pts_against"]
-    t["points"] = t["pts_for"] + t["pts_against"]
-    t["win"] = (t["margin"] > 0).astype(int)
+    t["win"] = (t["margin"] > 0).astype(float).where(t["margin"].notna())
     t["cover"] = np.sign(t["margin"] + t["spread"])            # 1 cover, -1 no cover, 0 push
     t["over"] = np.sign(t["points"] - t["total"])              # 1 over, -1 under, 0 push
+    t["win_prob"] = _implied(t["ml"]) / (_implied(t["ml"]) + _implied(t["opp_ml"]))     # no-vig moneyline price
+    t["fav"] = (t["win_prob"] > 0.5).astype(float).where(t["win_prob"].notna())
+    for name in ("div_game", "neutral"):
+        if name in t:
+            t[name] = pd.to_numeric(t[name], errors="coerce")
+    if "roof" in t:
+        t["dome"] = t["roof"].isin(["dome", "closed"]).astype(int)
+    if "weekday" in t:
+        for day in ("Thursday", "Monday", "Sunday", "Saturday"):
+            t[day[:3].lower()] = (t["weekday"] == day).astype(int)
 
-    # game number within the regular season, and rest
+    # game number within the regular season, record so far, rest
     reg = t["kind"].isin(["reg"])
     t["game_num"] = reg.groupby([t["team"], t["season"]]).cumsum().where(reg)
     t["is_opener"] = (t["game_num"] == 1).astype(int)
+    grp = [t["team"], t["season"]]
+    played = reg.astype(int)
+    won = (t["win"].fillna(0) * reg).astype(int)
+    games_so_far = played.groupby(grp).cumsum() - played
+    t["season_win_pct"] = (won.groupby(grp).cumsum() - won) / games_so_far.where(games_so_far >= 4)
     t["rest_days"] = t.groupby("team")["date"].diff().dt.days
     t["b2b"] = (t["rest_days"] == 1).astype(int)
     t["prev_win"] = t.groupby("team")["win"].shift(1)
     t["prev_cover"] = t.groupby("team")["cover"].shift(1)
     t["prev_over"] = t.groupby("team")["over"].shift(1)
+    t["prev_margin"] = t.groupby("team")["margin"].shift(1)
+
+    # the opponent's rest and record
+    theirs = t[["game_id", "team", "rest_days", "b2b", "season_win_pct"]].rename(columns={
+        "team": "opp", "rest_days": "opp_rest_days", "b2b": "opp_b2b", "season_win_pct": "opp_season_win_pct"})
+    t = t.merge(theirs, on=["game_id", "opp"], how="left")
+    t["rest_edge"] = t["rest_days"] - t["opp_rest_days"]
 
     # last meeting of this pair, any season
     t["pair"] = np.where(t["team"] < t["opp"], t["team"] + "|" + t["opp"], t["opp"] + "|" + t["team"])
@@ -152,12 +196,25 @@ def outcome(rows: pd.DataFrame, bet: str) -> pd.Series:
     raise ValueError(f"unknown bet {bet!r}")
 
 
+ODDS_COLUMN = {"under": "under_odds", "over": "over_odds", "ats": "spread_odds", "ml": "ml"}
+
+
 def select(t: pd.DataFrame, query: str, bet: str) -> pd.DataFrame:
     rows = t.query(query, engine="python") if query.strip() else t
-    rows = rows.dropna(subset=["total"] if bet in ("under", "over") else ["spread"])
+    need = ["total"] if bet in ("under", "over") else ["spread"] if bet == "ats" else ["ml"]
+    rows = rows.dropna(subset=need)
     if bet in ("under", "over"):
         rows = rows.drop_duplicates("game_id")              # both teams may match; bet the game once
     return rows
+
+
+def _decimal_profit(rows: pd.DataFrame, bet: str) -> pd.Series:
+    """Profit per unit risked on a win, from the posted price where we have it, else -110."""
+    col = ODDS_COLUMN[bet]
+    odds = pd.to_numeric(rows[col], errors="coerce") if col in rows else pd.Series(np.nan, index=rows.index)
+    odds = odds.where(odds.abs() >= 100)
+    dec = pd.Series(np.where(odds > 0, odds / 100, 100 / odds.abs()), index=rows.index)
+    return dec.fillna(PAYOUT)
 
 
 def evaluate(t: pd.DataFrame, query: str, bet: str) -> Result:
@@ -165,11 +222,15 @@ def evaluate(t: pd.DataFrame, query: str, bet: str) -> Result:
     res = outcome(rows, bet)
     w, l, p = int((res > 0).sum()), int((res < 0).sum()), int((res == 0).sum())
     n = len(rows)
-    roi = (w * PAYOUT - l) / (w + l) if (w + l) else float("nan")
+    win_profit = _decimal_profit(rows, bet)
+    decided = res != 0
+    profit = np.where(res > 0, win_profit, -1.0)[decided.to_numpy()]
+    roi = float(profit.sum() / (w + l)) if (w + l) else float("nan")
+    breakeven = float((1 / (1 + win_profit[decided])).mean()) if (w + l) else BREAKEVEN
     last = res.tail(10)
     by = {int(s): (int((r > 0).sum()), int((r < 0).sum())) for s, r in res.groupby(rows["season"])}
     return Result(n, w, l, p, roi, (int((last > 0).sum()), int((last < 0).sum()), int((last == 0).sum())),
-                  rows["season"].nunique(), binom_p_at_least(w, w + l, 0.5), binom_p_at_least(w, w + l, BREAKEVEN), by)
+                  rows["season"].nunique(), binom_p_at_least(w, w + l, 0.5), binom_p_at_least(w, w + l, breakeven), by)
 
 
 def leave_one_out(t: pd.DataFrame, conditions: list[str], bet: str) -> list[tuple[str, Result]]:
@@ -190,12 +251,13 @@ VOCAB = [
     ("at_home", "bin"), ("spread", "num"), ("total", "num"), ("game_num", "game"), ("rest_days", "rest"),
     ("b2b", "bin"), ("prev_win", "bin"), ("prev_cover", "sign"), ("prev_over", "sign"),
     ("prev_po_wins", "po"), ("prev_vs_opp_post", "bin"), ("prev_vs_opp_days", "days"),
-    ("prev_reg_win_pct", "pct"), ("is_opener", "bin"),
+    ("prev_reg_win_pct", "pct"), ("is_opener", "bin"), ("rest_edge", "rest"), ("opp_rest_days", "rest"),
+    ("season_win_pct", "pct"), ("opp_season_win_pct", "pct"), ("win_prob", "pct"), ("div_game", "bin"),
 ]
 
 
 def _random_condition(t: pd.DataFrame, rng: random.Random) -> str:
-    feat, kind = rng.choice(VOCAB)
+    feat, kind = rng.choice([v for v in VOCAB if v[0] in t.columns])      # a league may lack a feature (no spreads in hockey)
     col = t[feat].dropna()
     if col.empty:                                   # a feature with no data in this frame
         return "at_home == 1"
@@ -247,31 +309,28 @@ def summarize_null(records: list[tuple[int, int, str]], target_w: int, target_n:
 # an upcoming game
 # ---------------------------------------------------------------------------
 
-def upcoming(t: pd.DataFrame, season: int, team: str, opp: str, at_home: bool, date: pd.Timestamp,
-             spread: float, total: float) -> pd.Series:
-    """The same features for a game that has not been played, computed from history only."""
-    mine = t[(t["team"] == team) & (t["date"] < date)].sort_values("date")
-    this = mine[(mine["season"] == season) & (mine["kind"] == "reg")]
-    pair = t[(t["team"] == team) & (t["opp"] == opp) & (t["date"] < date)].sort_values("date")
-    last = pair.iloc[-1] if len(pair) else None
-    prev = t[(t["team"] == team) & (t["season"] == season - 1)]
-    po = prev[prev["kind"] == "post"]
-    reg = prev[prev["kind"] == "reg"]
-    row = {
-        "team": team, "opp": opp, "date": date, "season": season, "at_home": int(at_home),
-        "spread": spread, "total": total, "game_num": len(this) + 1, "is_opener": int(len(this) == 0),
-        "rest_days": (date - mine.iloc[-1]["date"]).days if len(mine) else np.nan,
-        "prev_vs_opp_post": int(last is not None and last["kind"] == "post"),
-        "prev_vs_opp_days": (date - last["date"]).days if last is not None else np.nan,
-        "prev_total": last["total"] if last is not None else np.nan,
-        "prev_points": last["points"] if last is not None else np.nan,
-        "prev_po_wins": float(po["win"].sum()), "prev_po_games": float(len(po)),
-        "prev_reg_win_pct": float(reg["win"].mean()) if len(reg) else np.nan,
-        "prev_win": float(mine.iloc[-1]["win"]) if len(mine) else np.nan,
-    }
-    row["b2b"] = int(row["rest_days"] == 1) if not np.isnan(row["rest_days"]) else 0
-    row["total_vs_prev"] = total - row["prev_total"] if last is not None else np.nan
-    return pd.Series(row)
+def season_of(when: pd.Timestamp) -> int:
+    """Season label (start year) of a date: all three leagues start in August or later."""
+    return when.year if when.month >= 8 else when.year - 1
+
+
+def upcoming(games: pd.DataFrame, away: str, home: str, when, spread: float | None, total: float | None,
+             kind: str = "reg", **extra) -> pd.DataFrame:
+    """Both teams' feature rows for a game that has not been played, from the same code that
+    builds the history (so every angle can be tested on it). `extra` sets any other column of the
+    games frame, e.g. home_ml, away_ml, roof, wind, weekday."""
+    when = pd.Timestamp(when)
+    row = {"date": when, "away": away, "home": home, "kind": kind, "season": season_of(when),
+           "home_spread_close": spread, "total_close": total, **extra}
+    frame = pd.concat([games[games["date"] < when], pd.DataFrame([row])], ignore_index=True)
+    t = team_games(frame, keep_unplayed=True)
+    return t[t["game_id"] == t["game_id"].max()].reset_index(drop=True)
+
+
+def active_teams(rows: pd.DataFrame, query: str) -> list[str]:
+    """Which of the upcoming game's team rows satisfy the query."""
+    hit = rows.query(query, engine="python") if query.strip() else rows
+    return list(hit["team"])
 
 
 def is_active(row: pd.Series, query: str) -> bool:

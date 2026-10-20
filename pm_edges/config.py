@@ -18,7 +18,7 @@ LEAGUE_SPORT_KEYS = {"nfl": "americanfootball_nfl", "nba": "basketball_nba"}
 # Scoring-model parameters per league. The NBA values come from the closing-line history
 # (pm_edges/history.py): residual SD of margin vs the spread and of points vs the total.
 LEAGUE_PARAMS: dict[str, dict] = {
-    "nfl": {"margin_sigma": 13.5, "total_sigma": 10.0, "key_number_weights": {0: 0.1, 3: 2.7, 7: 1.8}},
+    "nfl": {"margin_sigma": 13.5, "total_sigma": 13.4, "key_number_weights": {0: 0.1, 3: 2.7, 7: 1.8}},
     # residual SD of final margin vs closing spread / points vs closing total, 2020-2025 closes
     "nba": {"margin_sigma": 14.0, "total_sigma": 18.2, "key_number_weights": {}},
 }
@@ -63,7 +63,7 @@ class Config:
     book_weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_BOOK_WEIGHTS))
     default_book_weight: float = DEFAULT_BOOK_WEIGHT
     margin_sigma: float = 13.5      # NFL final margin, points
-    total_sigma: float = 10.0       # NFL game total, points
+    total_sigma: float = 13.4       # NFL game total, points (residual SD of closing totals, 1999-2026)
     # Multipliers on the probability mass of exact final margins |m| in the
     # discretised normal margin model. With sigma 13.5 they put about 14% of
     # close games on a 3-point margin and about 8% on 7, roughly the long-run

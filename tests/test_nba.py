@@ -83,7 +83,7 @@ def test_nba_scoring_model_uses_league_parameters():
     assert cfg.total_sigma == pytest.approx(18.2) and cfg.margin_sigma == pytest.approx(14.0) and not cfg.key_number_weights
     over_at_232_5 = model_for("total", cfg).convert(231.5, 0.50, 232.5)
     assert 0.46 < over_at_232_5 < 0.49                                   # about 2 points of probability per point of total
-    assert Config().apply_league("nfl").total_sigma == pytest.approx(10.0)
+    assert Config().apply_league("nfl").total_sigma == pytest.approx(13.4)
 
 
 # ---- real responses captured 2026-10-20 18:37 UTC, 76ers @ Knicks -------------------------------
