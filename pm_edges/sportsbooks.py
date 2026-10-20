@@ -15,7 +15,7 @@ from .config import ODDS_BASE, Config
 from .fair import american_to_prob
 from .httpclient import ApiError, JsonClient, Response
 from .models import BookRow, PMMarket, Selection, norm_player
-from .teams import full_name, team_from_text
+from .teams import league as _league
 
 PERIOD_SUFFIX = re.compile(r"_(h1|h2|q1|q2|q3|q4)$")
 
@@ -26,8 +26,13 @@ KNOWN_PROP_STATS = {
     "pass_rush_yds", "receptions", "reception_yds", "reception_tds", "rush_attempts",
     "rush_reception_yds", "rush_tds", "rush_yds", "sacks", "anytime_td", "tds_over",
     "reception_longest",
+    # NBA
+    "points", "rebounds", "assists", "threes", "steals", "blocks", "pra",
 }
 NO_ALTERNATE = {"anytime_td", "tds_over", "reception_longest"}
+# our stat name -> the Odds API's, where they differ
+STAT_TO_KEY = {"pra": "points_rebounds_assists"}
+KEY_TO_STAT = {v: k for k, v in STAT_TO_KEY.items()}
 
 
 def suffix(period: str) -> str:
@@ -45,9 +50,10 @@ def market_keys_for(sel: Selection, alternates: bool = False) -> list[str]:
         base = "team_totals" if sel.stat == "team_total" else "totals"
         return [f"alternate_{base}{sfx}"] if alternates else [f"{base}{sfx}"]
     if sel.market_type == "player_prop" and sel.stat in KNOWN_PROP_STATS:
+        key = STAT_TO_KEY.get(sel.stat, sel.stat)
         if alternates:
-            return [] if sel.stat in NO_ALTERNATE else [f"player_{sel.stat}_alternate"]
-        return [f"player_{sel.stat}"]
+            return [] if sel.stat in NO_ALTERNATE else [f"player_{key}_alternate"]
+        return [f"player_{key}"]
     return []
 
 
@@ -69,11 +75,12 @@ def parse_market_key(key: str) -> tuple[str, str, str] | None:
     if base == "team_totals":
         return "total", period, "team_total"
     if base.startswith("player_"):
-        return "player_prop", period, base.removeprefix("player_").removesuffix("_alternate")
+        stat = base.removeprefix("player_").removesuffix("_alternate")
+        return "player_prop", period, KEY_TO_STAT.get(stat, stat)
     return None
 
 
-def normalize_event_odds(body: dict, game_id: str, fetched_at: datetime) -> list[BookRow]:
+def normalize_event_odds(body: dict, game_id: str, fetched_at: datetime, lg: str = "nfl") -> list[BookRow]:
     rows: list[BookRow] = []
     for bm in body.get("bookmakers") or []:
         book = bm.get("key", "")
@@ -84,7 +91,7 @@ def normalize_event_odds(body: dict, game_id: str, fetched_at: datetime) -> list
                 continue
             market_type, period, stat = parsed
             for oc in mk.get("outcomes") or []:
-                sel = _outcome_selection(market_type, period, stat, oc)
+                sel = _outcome_selection(market_type, period, stat, oc, lg)
                 price = oc.get("price")
                 if sel is None or price is None:
                     continue
@@ -98,7 +105,8 @@ def normalize_event_odds(body: dict, game_id: str, fetched_at: datetime) -> list
     return rows
 
 
-def _outcome_selection(market_type: str, period: str, stat: str, oc: dict) -> Selection | None:
+def _outcome_selection(market_type: str, period: str, stat: str, oc: dict, lg: str = "nfl") -> Selection | None:
+    team_from_text = _league(lg).team_from_text
     name = str(oc.get("name", ""))
     point = oc.get("point")
     line = float(point) if point is not None else None
@@ -127,10 +135,11 @@ def _outcome_selection(market_type: str, period: str, stat: str, oc: dict) -> Se
 
 
 class OddsApiClient:
-    def __init__(self, http: JsonClient, cfg: Config, sport: str):
+    def __init__(self, http: JsonClient, cfg: Config, sport: str, lg: str = "nfl"):
         self.http = http
         self.cfg = cfg
         self.sport = sport
+        self.league = _league(lg)
         self.last_headers: dict[str, str] = {}
         self.calls: list[tuple[str, str]] = []   # (what, credits used)
 
@@ -146,7 +155,7 @@ class OddsApiClient:
     def find_event(self, home: str, away: str, local_date: date) -> dict:
         resp = self._get(f"/sports/{self.sport}/events", {"dateFormat": "iso"})
         events = resp.body if isinstance(resp.body, list) else []
-        want_home, want_away = full_name(home), full_name(away)
+        want_home, want_away = self.league.full_name(home), self.league.full_name(away)
         cands = [e for e in events if e.get("home_team") == want_home and e.get("away_team") == want_away]
         if not cands:
             raise ApiError(f"Odds API has no event {want_away} @ {want_home}")

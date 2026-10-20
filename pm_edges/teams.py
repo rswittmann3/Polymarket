@@ -1,7 +1,12 @@
-"""NFL team names, so Polymarket outcomes and sportsbook names can be matched."""
+"""Team names per league, so Polymarket outcomes and sportsbook names can be matched.
+
+Every lookup takes a `league` ("nfl" or "nba"); NFL is the default so older call
+sites keep working. Polymarket slugs use the lowercase abbreviation in both leagues.
+"""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 
 # abbr: (full name as The Odds API writes it, city, nickname, extra aliases)
 NFL_TEAMS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
@@ -39,6 +44,39 @@ NFL_TEAMS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "WAS": ("Washington Commanders", "Washington", "Commanders", ("WSH",)),
 }
 
+NBA_TEAMS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
+    "ATL": ("Atlanta Hawks", "Atlanta", "Hawks", ()),
+    "BOS": ("Boston Celtics", "Boston", "Celtics", ()),
+    "BKN": ("Brooklyn Nets", "Brooklyn", "Nets", ("BRK",)),
+    "CHA": ("Charlotte Hornets", "Charlotte", "Hornets", ("CHO",)),
+    "CHI": ("Chicago Bulls", "Chicago", "Bulls", ()),
+    "CLE": ("Cleveland Cavaliers", "Cleveland", "Cavaliers", ("Cavs",)),
+    "DAL": ("Dallas Mavericks", "Dallas", "Mavericks", ("Mavs",)),
+    "DEN": ("Denver Nuggets", "Denver", "Nuggets", ()),
+    "DET": ("Detroit Pistons", "Detroit", "Pistons", ()),
+    "GSW": ("Golden State Warriors", "Golden State", "Warriors", ("GS",)),
+    "HOU": ("Houston Rockets", "Houston", "Rockets", ()),
+    "IND": ("Indiana Pacers", "Indiana", "Pacers", ()),
+    "LAC": ("Los Angeles Clippers", "Los Angeles", "Clippers", ("LA Clippers",)),
+    "LAL": ("Los Angeles Lakers", "Los Angeles", "Lakers", ("LA Lakers",)),
+    "MEM": ("Memphis Grizzlies", "Memphis", "Grizzlies", ()),
+    "MIA": ("Miami Heat", "Miami", "Heat", ()),
+    "MIL": ("Milwaukee Bucks", "Milwaukee", "Bucks", ()),
+    "MIN": ("Minnesota Timberwolves", "Minnesota", "Timberwolves", ("Wolves",)),
+    "NOP": ("New Orleans Pelicans", "New Orleans", "Pelicans", ("NO", "NOLA")),
+    "NYK": ("New York Knicks", "New York", "Knicks", ("NY",)),
+    "OKC": ("Oklahoma City Thunder", "Oklahoma City", "Thunder", ()),
+    "ORL": ("Orlando Magic", "Orlando", "Magic", ()),
+    "PHI": ("Philadelphia 76ers", "Philadelphia", "76ers", ("Sixers",)),
+    "PHX": ("Phoenix Suns", "Phoenix", "Suns", ("PHO",)),
+    "POR": ("Portland Trail Blazers", "Portland", "Trail Blazers", ("Blazers", "Trailblazers")),
+    "SAC": ("Sacramento Kings", "Sacramento", "Kings", ()),
+    "SAS": ("San Antonio Spurs", "San Antonio", "Spurs", ("SA",)),
+    "TOR": ("Toronto Raptors", "Toronto", "Raptors", ()),
+    "UTA": ("Utah Jazz", "Utah", "Jazz", ("UTAH",)),
+    "WAS": ("Washington Wizards", "Washington", "Wizards", ("WSH",)),
+}
+
 _AMBIGUOUS_CITIES = {"Los Angeles", "New York"}
 
 
@@ -46,42 +84,71 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-def _build_alias_map() -> dict[str, str]:
-    out: dict[str, str] = {}
-    for abbr, (full, city, nick, extra) in NFL_TEAMS.items():
-        names = [abbr, full, nick, *extra]
-        if city not in _AMBIGUOUS_CITIES:
-            names.append(city)
-        for name in names:
-            out[_norm(name)] = abbr
-    return out
+@dataclass
+class League:
+    key: str
+    sport_key: str
+    teams: dict[str, tuple[str, str, str, tuple[str, ...]]]
+    aliases: dict[str, str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        out: dict[str, str] = {}
+        for abbr, (full, city, nick, extra) in self.teams.items():
+            names = [abbr, full, nick, *extra]
+            if city not in _AMBIGUOUS_CITIES:
+                names.append(city)
+            for name in names:
+                out[_norm(name)] = abbr
+        self.aliases = out
+
+    def canonical_abbr(self, abbr: str) -> str:
+        key = _norm(abbr)
+        if key in self.aliases:
+            return self.aliases[key]
+        raise KeyError(f"unknown {self.key.upper()} team: {abbr!r}")
+
+    def team_from_text(self, text: str) -> str | None:
+        """The team abbreviation a name refers to, or None if unsure."""
+        key = _norm(text)
+        if key in self.aliases:
+            return self.aliases[key]
+        hits = {abbr for alias, abbr in self.aliases.items()
+                if len(alias) > 3 and re.search(rf"\b{re.escape(alias)}\b", key)}
+        return hits.pop() if len(hits) == 1 else None
+
+    def full_name(self, abbr: str) -> str:
+        return self.teams[self.canonical_abbr(abbr)][0]
+
+    def search_terms(self, abbr: str) -> list[str]:
+        full, _city, nick, _ = self.teams[self.canonical_abbr(abbr)]
+        return [nick, full]
 
 
-_ALIASES = _build_alias_map()
+LEAGUES: dict[str, League] = {
+    "nfl": League("nfl", "americanfootball_nfl", NFL_TEAMS),
+    "nba": League("nba", "basketball_nba", NBA_TEAMS),
+}
 
 
-def canonical_abbr(abbr: str) -> str:
-    """'wsh' -> 'WAS'. Raises KeyError for an unknown code."""
-    key = _norm(abbr)
-    if key in _ALIASES:
-        return _ALIASES[key]
-    raise KeyError(f"unknown NFL team: {abbr!r}")
+def league(key: str = "nfl") -> League:
+    try:
+        return LEAGUES[key.lower()]
+    except KeyError:
+        raise KeyError(f"league {key!r} not supported (have: {', '.join(LEAGUES)})") from None
 
 
-def team_from_text(text: str) -> str | None:
-    """Return the team abbreviation a name refers to, or None if unsure."""
-    key = _norm(text)
-    if key in _ALIASES:
-        return _ALIASES[key]
-    hits = {abbr for alias, abbr in _ALIASES.items()
-            if len(alias) > 3 and re.search(rf"\b{re.escape(alias)}\b", key)}
-    return hits.pop() if len(hits) == 1 else None
+# Module-level helpers keep the old NFL-only call style working.
+def canonical_abbr(abbr: str, lg: str = "nfl") -> str:
+    return league(lg).canonical_abbr(abbr)
 
 
-def full_name(abbr: str) -> str:
-    return NFL_TEAMS[canonical_abbr(abbr)][0]
+def team_from_text(text: str, lg: str = "nfl") -> str | None:
+    return league(lg).team_from_text(text)
 
 
-def search_terms(abbr: str) -> list[str]:
-    full, city, nick, _ = NFL_TEAMS[canonical_abbr(abbr)]
-    return [nick, full]
+def full_name(abbr: str, lg: str = "nfl") -> str:
+    return league(lg).full_name(abbr)
+
+
+def search_terms(abbr: str, lg: str = "nfl") -> list[str]:
+    return league(lg).search_terms(abbr)

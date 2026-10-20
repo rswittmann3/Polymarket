@@ -13,7 +13,15 @@ GAMMA_BASE = "https://gamma-api.polymarket.com"
 CLOB_BASE = "https://clob.polymarket.com"
 ODDS_BASE = "https://api.the-odds-api.com/v4"
 
-LEAGUE_SPORT_KEYS = {"nfl": "americanfootball_nfl"}
+LEAGUE_SPORT_KEYS = {"nfl": "americanfootball_nfl", "nba": "basketball_nba"}
+
+# Scoring-model parameters per league. The NBA values come from the closing-line history
+# (pm_edges/history.py): residual SD of margin vs the spread and of points vs the total.
+LEAGUE_PARAMS: dict[str, dict] = {
+    "nfl": {"margin_sigma": 13.5, "total_sigma": 10.0, "key_number_weights": {0: 0.1, 3: 2.7, 7: 1.8}},
+    # residual SD of final margin vs closing spread / points vs closing total, 2020-2025 closes
+    "nba": {"margin_sigma": 14.0, "total_sigma": 18.2, "key_number_weights": {}},
+}
 
 # Odds API bookmaker keys. Check them against the `key` values in a real
 # response; a book that is missing from the response is skipped.
@@ -104,6 +112,12 @@ class Config:
     timeout_s: float = 20.0
     retries: int = 3
     concurrency: int = 8
+
+    def apply_league(self, league: str) -> "Config":
+        """Set the scoring-model parameters for a league (NFL is the default)."""
+        for key, value in LEAGUE_PARAMS.get(league, {}).items():
+            setattr(self, key, dict(value) if isinstance(value, dict) else value)
+        return self
 
     def in_scope(self, period: str) -> bool:
         allowed = {"full": {"full"}, "halves": {"full", "h1", "h2"}}.get(self.scope)

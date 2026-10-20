@@ -46,6 +46,14 @@ def build_parser() -> argparse.ArgumentParser:
     _game_args(m)
     m.add_argument("--all", action="store_true", help="also show markets below the liquidity filter")
 
+    tr = sub.add_parser("trends", help="historical situational angles for a game (NBA)", epilog=LEGAL)
+    _game_args(tr)
+    tr.add_argument("--spread", type=float, required=True, help="home spread, e.g. -4.5 if the home team is favoured by 4.5")
+    tr.add_argument("--total", type=float, required=True, help="game total")
+    tr.add_argument("--angle", help='a TrendsCenter-style filter, e.g. "at_home == 1 and spread > -7 and game_num == 1"')
+    tr.add_argument("--bet", choices=["under", "over", "ats"], default="under")
+    tr.add_argument("--leave-one-out", action="store_true", help="show which conditions of --angle carry its record")
+
     s = sub.add_parser("snapshot", help="store both sources in SQLite (run every 10-15 min)", epilog=LEGAL)
     _game_args(s)
     s.add_argument("--history", action="store_true", help="also pull CLOB price history")
@@ -110,7 +118,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        if args.cmd == "markets":
+        if args.cmd == "trends":
+            from .trends import run as run_trends
+            run_trends(console, spec.league, spec.away, spec.home, args.date, args.spread, args.total,
+                       args.data_dir, args.angle, args.bet, args.leave_one_out)
+        elif args.cmd == "markets":
             run = collect(spec, cfg, offline=args.offline, offline_run=args.offline_run,
                           books=False, use_clob=not args.no_clob)
             _header(console, run)

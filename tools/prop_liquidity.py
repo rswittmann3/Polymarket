@@ -69,7 +69,6 @@ def main() -> None:
             fills = {}
             for s in stakes:
                 w = walk_book(o.ask_levels, s)
-                exit_w = walk_book(o.bid_levels, w["shares"] * (o.bid_levels[0][0] if o.bid_levels else 0)) if w["shares"] else None
                 fills[str(int(s))] = {
                     "filled": w["filled"], "spent": round(w["spent"], 2), "shares": round(w["shares"], 1),
                     "avg": None if w["avg"] is None else round(w["avg"], 4),

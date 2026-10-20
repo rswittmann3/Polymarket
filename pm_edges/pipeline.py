@@ -29,8 +29,8 @@ class GameSpec:
 
     def __post_init__(self):
         self.league = self.league.lower()
-        self.away = canonical_abbr(self.away)
-        self.home = canonical_abbr(self.home)
+        self.away = canonical_abbr(self.away, self.league)
+        self.home = canonical_abbr(self.home, self.league)
 
     @property
     def game_id(self) -> str:
@@ -77,7 +77,7 @@ def fetch_polymarket(run: Run, http: JsonClient, use_clob: bool = True, history:
         raise ApiError(f"no Polymarket event found for {spec.away} @ {spec.home} on {spec.date} "
                        f"(tried slugs for {spec.date} and the next day)")
     fetched = http.latest_fetch or utcnow()
-    run.markets = event_markets(events, spec.game_id, spec.home, spec.away, fetched)
+    run.markets = event_markets(events, spec.game_id, spec.home, spec.away, fetched, lg=spec.league)
     live = [m for m in run.markets if m.active and not m.closed]
     if use_clob:
         run.clob_priced = pm.attach_books(live)
@@ -88,7 +88,7 @@ def fetch_polymarket(run: Run, http: JsonClient, use_clob: bool = True, history:
 
 def fetch_books(run: Run, http: JsonClient) -> None:
     spec, cfg = run.spec, run.cfg
-    odds = OddsApiClient(http, cfg, spec.sport_key)
+    odds = OddsApiClient(http, cfg, spec.sport_key, spec.league)
     try:
         event = odds.find_event(spec.home, spec.away, spec.date)
         # only liquid, in-scope markets cost credits
@@ -96,12 +96,12 @@ def fetch_books(run: Run, http: JsonClient) -> None:
                 if any(o.selection and cfg.in_scope(o.selection.period) for o in m.outcomes)]
         keys = needed_market_keys(live)
         resp = _event_odds_with_fallback(odds, event["id"], keys, run)
-        rows = normalize_event_odds(resp.body, spec.game_id, resp.fetched_at)
+        rows = normalize_event_odds(resp.body, spec.game_id, resp.fetched_at, spec.league)
         if cfg.fetch_alternates:
             alt = missing_lines(live, rows)
             if alt:
                 resp2 = _event_odds_with_fallback(odds, event["id"], alt, run)
-                rows += normalize_event_odds(resp2.body, spec.game_id, resp2.fetched_at)
+                rows += normalize_event_odds(resp2.body, spec.game_id, resp2.fetched_at, spec.league)
         run.book_rows = rows
     except ApiError as exc:
         run.warnings.append(f"sportsbooks: {exc}")
@@ -123,6 +123,7 @@ def _event_odds_with_fallback(odds: OddsApiClient, event_id: str, keys: set[str]
 def collect(spec: GameSpec, cfg: Config, *, offline: bool = False, offline_run: str | None = None,
             books: bool = True, use_clob: bool = True, history: bool = False,
             transport: httpx.BaseTransport | None = None) -> Run:
+    cfg.apply_league(spec.league)
     run = Run(spec, cfg)
     http = make_http(cfg, spec, offline, offline_run, transport)
     try:
@@ -149,6 +150,7 @@ class Analysis:
 def analyze(run: Run, store: Store | None, bankroll: float | None = None,
             splits_provider=None) -> Analysis:
     spec, cfg = run.spec, run.cfg
+    cfg.apply_league(spec.league)
     live = checked(run.markets, cfg)
     ofs = match_markets(live, run.book_rows, spec.home, spec.away, cfg)
 

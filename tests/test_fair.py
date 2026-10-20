@@ -126,3 +126,11 @@ def test_kelly():
     assert kelly_fraction(0.5, 0.4) == pytest.approx(1 / 6)
     assert kelly_fraction(0.4, 0.5) == 0.0
     assert kelly_fraction(0.5, 1.0) == 0.0
+
+
+def test_binomial_tail_matches_hand_cases_and_large_n():
+    from pm_edges.angles import binom_p_at_least
+    assert binom_p_at_least(15, 15, 0.5) == pytest.approx(0.5 ** 15)
+    assert binom_p_at_least(11, 13, 0.5) == pytest.approx((78 + 13 + 1) / 8192)   # C(13,11)+C(13,12)+C(13,13)
+    assert binom_p_at_least(0, 10, 0.5) == 1.0
+    assert 0.4 < binom_p_at_least(5000, 10000, 0.5) < 0.52                         # no overflow at large n

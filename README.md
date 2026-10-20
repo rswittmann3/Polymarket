@@ -217,3 +217,23 @@ Spread SF −7.5 (−110/−110; opened −5.5). Total 52.5 (DraftKings O −105
 - **One soft book is not enough.** A row only flags when its fair value comes from Pinnacle or at least two books (`min_books_to_flag`). On 2026-10-19 the tool showed McCaffrey rushing Under 59.5 at +2.2 from FanDuel alone, while Pinnacle, DraftKings and BetMGM all posted 61.5 to 62.5. At 59.5 the Under should be below 50%, so the edge was an artifact.
 - **Props resolve differently.** Polymarket resolves a player prop to Under/No if the player is inactive or does not play. Sportsbooks usually refund.
 - **Prop brief tooling.** `tools/prop_liquidity.py` pulls fresh books and walks the ask side per stake; `tools/prop_brief_data.py` joins that with the sportsbook fair values.
+
+
+## NBA
+
+`--league nba` works for `markets`, `snapshot` and `edges` (and `trends`, below). Polymarket NBA slugs are `nba-<away>-<home>-<date>`; the date can be the local or the UTC date, so both are tried. Game, first-half, and player points/rebounds/assists markets are mapped to the Odds API's `h2h`, `spreads`, `totals`, `*_h1` and `player_*` keys. Props are Yes/No on Polymarket ("Yes" is the Over); if the player does not play the market resolves No.
+
+## Historical trends (`pm_edges trends`)
+
+```bash
+pip install -e ".[history]"
+python tools/fetch_history.py sbr            # 2007-08 to 2021-22: scores and closing lines (Sportsbook Reviews Online)
+python tools/fetch_history.py espn           # 2022-23 on, plus the 2019-20 bubble: scores and ESPN BET closing lines
+pm_edges trends --league nba --away PHI --home NYK --date 2026-10-20 --spread -4.5 --total 231.5 \
+    --angle "at_home == 1 and spread > -7 and spread < 2 and game_num == 1 and prev_vs_opp_post == 1" --bet under --leave-one-out
+python tools/angle_null_test.py              # same search on real vs shuffled outcomes
+```
+
+The history is 24,000+ games with closing spread and total. Two sources disagree by up to a point on about half of games (different books), so an angle that depends on a total or spread sitting within a point of a cutoff is fragile. Features available to `--angle`: `at_home`, `spread`, `total`, `game_num`, `is_opener`, `rest_days`, `b2b`, `prev_win`, `prev_cover`, `prev_over`, `prev_po_wins`, `prev_vs_opp_post`, `prev_vs_opp_days`, `prev_total`, `total_vs_prev`, `prev_reg_win_pct`, `total_vs_avg`, `season` (start year).
+
+How to read an angle: a record is worth something only if (1) it was written down before looking, (2) the sample is large, and (3) it survives dropping any one condition. The library in `pm_edges/trends.py` is written in advance. A filter with seven conditions and 13 games has 13 games of evidence however long the filter is.

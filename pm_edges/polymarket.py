@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from .config import CLOB_BASE, GAMMA_BASE, Config
 from .httpclient import ApiError, JsonClient
 from .models import PMMarket, PMOutcome, Selection, norm_player
-from .teams import canonical_abbr, search_terms, team_from_text
+from .teams import league as _league
 
 # --------------------------------------------------------------------------
 # Field parsing
@@ -154,6 +154,15 @@ PROP_SMT: dict[str, str | None] = {
     "anytime_touchdowns": "anytime_td",
     "two_plus_touchdowns": "tds_over",
     "team_first_touchdowns": None,
+    # NBA
+    "points": "points",
+    "rebounds": "rebounds",
+    "assists": "assists",
+    "threes": "threes",
+    "three_pointers": "threes",
+    "steals": "steals",
+    "blocks": "blocks",
+    "points_rebounds_assists": "pra",
 }
 
 
@@ -183,7 +192,7 @@ def _side_name(name: str) -> str:
     return {"over": "over", "under": "under", "yes": "yes", "no": "no"}.get(n, n)
 
 
-def classify(m: dict, home: str, away: str) -> tuple[str, list[Selection | None], str]:
+def classify(m: dict, home: str, away: str, lg: str = "nfl") -> tuple[str, list[Selection | None], str]:
     """Return (market_type, per-outcome selections, note) for a Gamma market."""
     question = (m.get("question") or "").strip()
     smt = (m.get("sportsMarketType") or "").lower()
@@ -197,6 +206,7 @@ def classify(m: dict, home: str, away: str) -> tuple[str, list[Selection | None]
     if len(outcomes) != 2:
         return "other", none, f"{len(outcomes)} outcomes; only two-way markets are priced"
 
+    team_from_text = _league(lg).team_from_text
     teams = [team_from_text(o) for o in outcomes]
     is_two_teams = all(teams) and teams[0] != teams[1] and set(teams) <= {home, away}
 
@@ -323,12 +333,12 @@ def _parse_prop(question: str, sides: list[str], period: str) -> list[Selection]
     return None
 
 
-def normalize_market(m: dict, event_slug: str, game_id: str, home: str, away: str,
+def normalize_market(m: dict, event_slug: str, game_id: str, home: str, away: str, lg: str = "nfl",
                      fetched_at: datetime | None = None) -> PMMarket:
     outcomes = [str(o) for o in parse_json_list(m.get("outcomes"))]
     prices = [to_float(p) for p in parse_json_list(m.get("outcomePrices"))]
     tokens = [str(t) for t in parse_json_list(m.get("clobTokenIds"))]
-    market_type, sels, note = classify(m, home, away)
+    market_type, sels, note = classify(m, home, away, lg)
     bid, ask = to_float(m.get("bestBid")), to_float(m.get("bestAsk"))
     fees_enabled, fee_rate, fee_exp = parse_fee_schedule(m)
 
@@ -485,7 +495,8 @@ class PolymarketClient:
         without code changes. `hint_suffixes` are probed directly as a backup
         in case search misses one.
         """
-        away, home = canonical_abbr(away), canonical_abbr(home)
+        lgobj = _league(league)
+        away, home = lgobj.canonical_abbr(away), lgobj.canonical_abbr(home)
         found: dict[str, dict] = {}
         bases = [game_slug(league, away, home, d) for d in slug_dates(local_date, kickoff, tz)]
         base_hit = None
@@ -496,8 +507,8 @@ class PolymarketClient:
                 base_hit = base_hit or base
 
         prefixes = [base_hit] if base_hit else bases
-        queries = [f"{search_terms(away)[0]} {search_terms(home)[0]}",
-                   *search_terms(away)[1:], *search_terms(home)[1:]]
+        queries = [f"{lgobj.search_terms(away)[0]} {lgobj.search_terms(home)[0]}",
+                   *lgobj.search_terms(away)[1:], *lgobj.search_terms(home)[1:]]
         sibling_slugs: set[str] = set()
         for q in queries:
             try:
@@ -594,7 +605,7 @@ class PolymarketClient:
 
 
 def event_markets(events: list[dict], game_id: str, home: str, away: str,
-                  fetched_at: datetime | None = None) -> list[PMMarket]:
+                  fetched_at: datetime | None = None, lg: str = "nfl") -> list[PMMarket]:
     seen: set[str] = set()
     out = []
     for ev in events:
@@ -603,5 +614,5 @@ def event_markets(events: list[dict], game_id: str, home: str, away: str,
             if key in seen:
                 continue
             seen.add(key)
-            out.append(normalize_market(m, ev.get("slug", ""), game_id, home, away, fetched_at))
+            out.append(normalize_market(m, ev.get("slug", ""), game_id, home, away, lg=lg, fetched_at=fetched_at))
     return out
