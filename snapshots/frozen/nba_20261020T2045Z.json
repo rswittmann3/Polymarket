@@ -1,0 +1,280 @@
+{
+ "generated": "2026-10-20T19:54:06+00:00",
+ "games": [
+  {
+   "league": "nba",
+   "away": "PHI",
+   "home": "NYK",
+   "date": "2026-10-20",
+   "kickoff": "2026-10-20T23:00:00+00:00",
+   "total": 231.5,
+   "total_open": 229.5,
+   "home_spread": -4.5,
+   "home_spread_open": -3.5,
+   "pred_close_total": 228.77771779390494,
+   "pred_close_spread": -4.078081909108911,
+   "model_total": 232.1106545996402,
+   "model_home_spread": -4.207437751875587,
+   "preds": {
+    "side": -0.292562248124413,
+    "total": 0.6106545996402096,
+    "move_side": -0.578081909108911,
+    "move_total": -0.7222822060950498
+   }
+  },
+  {
+   "league": "nba",
+   "away": "OKC",
+   "home": "SAS",
+   "date": "2026-10-20",
+   "kickoff": "2026-10-21T01:30:00+00:00",
+   "total": 230.5,
+   "total_open": 228.5,
+   "home_spread": 1.5,
+   "home_spread_open": -1.5,
+   "pred_close_total": 227.94793772321532,
+   "pred_close_spread": -1.2353251875852318,
+   "model_total": 231.2279045129222,
+   "model_home_spread": 1.4827556675613196,
+   "preds": {
+    "side": 0.017244332438680413,
+    "total": 0.7279045129222175,
+    "move_side": 0.2646748124147682,
+    "move_total": -0.552062276784669
+   }
+  },
+  {
+   "league": "nba",
+   "away": "ATL",
+   "home": "ORL",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-21T23:00:00+00:00",
+   "total": 236.5,
+   "total_open": 232.5,
+   "home_spread": -3.5,
+   "home_spread_open": -2.5,
+   "pred_close_total": 231.73225241810647,
+   "pred_close_spread": -2.326927126471714,
+   "model_total": 237.78205255343974,
+   "model_home_spread": -3.2830944438960823,
+   "preds": {
+    "side": -0.2169055561039178,
+    "total": 1.2820525534397365,
+    "move_side": 0.17307287352828615,
+    "move_total": -0.7677475818935362
+   }
+  },
+  {
+   "league": "nba",
+   "away": "MIL",
+   "home": "WAS",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-21T23:00:00+00:00",
+   "total": 238.5,
+   "total_open": 238.5,
+   "home_spread": -4.5,
+   "home_spread_open": -6.5,
+   "pred_close_total": 238.98723741974564,
+   "pred_close_spread": -5.681936929675671,
+   "model_total": 239.52495900503695,
+   "model_home_spread": -3.9260347082571423,
+   "preds": {
+    "side": -0.5739652917428579,
+    "total": 1.0249590050369546,
+    "move_side": 0.8180630703243293,
+    "move_total": 0.48723741974564766
+   }
+  },
+  {
+   "league": "nba",
+   "away": "MIN",
+   "home": "MIA",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-21T23:30:00+00:00",
+   "total": 243.5,
+   "total_open": 236.5,
+   "home_spread": -1.5,
+   "home_spread_open": -3.5,
+   "pred_close_total": 237.08086689069668,
+   "pred_close_spread": -3.6351138041654933,
+   "model_total": 244.91749794716432,
+   "model_home_spread": -1.1544538732143441,
+   "preds": {
+    "side": -0.3455461267856559,
+    "total": 1.4174979471643256,
+    "move_side": -0.13511380416549343,
+    "move_total": 0.5808668906966851
+   }
+  },
+  {
+   "league": "nba",
+   "away": "CHA",
+   "home": "BKN",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-21T23:30:00+00:00",
+   "total": 219.5,
+   "total_open": 226.5,
+   "home_spread": -3.5,
+   "home_spread_open": 4.5,
+   "pred_close_total": 226.1268744270785,
+   "pred_close_spread": 5.69383767038233,
+   "model_total": 221.13749193598076,
+   "model_home_spread": -3.0465372172805365,
+   "preds": {
+    "side": -0.4534627827194636,
+    "total": 1.6374919359807618,
+    "move_side": 1.1938376703823304,
+    "move_total": -0.37312557292151
+   }
+  },
+  {
+   "league": "nba",
+   "away": "CHI",
+   "home": "TOR",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-21T23:30:00+00:00",
+   "total": 236.5,
+   "total_open": 235.5,
+   "home_spread": -9.5,
+   "home_spread_open": -8.5,
+   "pred_close_total": 235.30584193569007,
+   "pred_close_spread": -8.470428666139064,
+   "model_total": 237.08047928257335,
+   "model_home_spread": -9.261342850727296,
+   "preds": {
+    "side": -0.23865714927270434,
+    "total": 0.5804792825733457,
+    "move_side": 0.029571333860935554,
+    "move_total": -0.19415806430992524
+   }
+  },
+  {
+   "league": "nba",
+   "away": "UTA",
+   "home": "MEM",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-22T00:00:00+00:00",
+   "total": 240.5,
+   "total_open": 241.5,
+   "home_spread": -1.5,
+   "home_spread_open": 2.5,
+   "pred_close_total": 242.53194925030505,
+   "pred_close_spread": 3.02883751880966,
+   "model_total": 241.6793033693485,
+   "model_home_spread": -1.0769201311541408,
+   "preds": {
+    "side": -0.42307986884585924,
+    "total": 1.179303369348504,
+    "move_side": 0.5288375188096598,
+    "move_total": 1.0319492503050458
+   }
+  },
+  {
+   "league": "nba",
+   "away": "IND",
+   "home": "NOP",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-22T00:00:00+00:00",
+   "total": 239.5,
+   "total_open": 240.5,
+   "home_spread": 3.5,
+   "home_spread_open": 4.5,
+   "pred_close_total": 240.65225913594247,
+   "pred_close_spread": 4.575057523327913,
+   "model_total": 240.28019902744296,
+   "model_home_spread": 3.647194939714315,
+   "preds": {
+    "side": -0.14719493971431521,
+    "total": 0.7801990274429551,
+    "move_side": 0.07505752332791285,
+    "move_total": 0.15225913594246748
+   }
+  },
+  {
+   "league": "nba",
+   "away": "DAL",
+   "home": "HOU",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-22T00:30:00+00:00",
+   "total": 230.5,
+   "total_open": 226.5,
+   "home_spread": -8.5,
+   "home_spread_open": -8.5,
+   "pred_close_total": 226.817003855924,
+   "pred_close_spread": -8.58138477305981,
+   "model_total": 231.77139993415824,
+   "model_home_spread": -8.34927004262803,
+   "preds": {
+    "side": -0.15072995737197045,
+    "total": 1.2713999341582336,
+    "move_side": -0.0813847730598105,
+    "move_total": 0.31700385592401814
+   }
+  },
+  {
+   "league": "nba",
+   "away": "GSW",
+   "home": "LAL",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-22T02:00:00+00:00",
+   "total": 234.5,
+   "total_open": 231.5,
+   "home_spread": -6.5,
+   "home_spread_open": -5.5,
+   "pred_close_total": 231.13469221348265,
+   "pred_close_spread": -5.127893904237333,
+   "model_total": 235.59977154718896,
+   "model_home_spread": -6.2311267502860925,
+   "preds": {
+    "side": -0.26887324971390786,
+    "total": 1.0997715471889657,
+    "move_side": 0.3721060957626666,
+    "move_total": -0.3653077865173481
+   }
+  },
+  {
+   "league": "nba",
+   "away": "PHX",
+   "home": "POR",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-22T02:00:00+00:00",
+   "total": 232.5,
+   "total_open": 236.5,
+   "home_spread": -3.5,
+   "home_spread_open": -4.5,
+   "pred_close_total": 235.53844269892045,
+   "pred_close_spread": -4.254425735459903,
+   "model_total": 233.3268991054433,
+   "model_home_spread": -3.301578201603757,
+   "preds": {
+    "side": -0.19842179839624308,
+    "total": 0.8268991054432887,
+    "move_side": 0.24557426454009676,
+    "move_total": -0.9615573010795512
+   }
+  },
+  {
+   "league": "nba",
+   "away": "SAC",
+   "home": "LAC",
+   "date": "2026-10-21",
+   "kickoff": "2026-10-22T02:30:00+00:00",
+   "total": 228.5,
+   "total_open": 230.5,
+   "home_spread": -4.5,
+   "home_spread_open": -4.5,
+   "pred_close_total": 230.71840570498324,
+   "pred_close_spread": -4.760106830100478,
+   "model_total": 229.21293941408848,
+   "model_home_spread": -4.2765641068469495,
+   "preds": {
+    "side": -0.2234358931530508,
+    "total": 0.7129394140884742,
+    "move_side": -0.260106830100478,
+    "move_total": 0.2184057049832408
+   }
+  }
+ ],
+ "predicted_at": "2026-10-20T19:54:06+00:00",
+ "saved_at": "2026-10-20T20:45:12+00:00"
+}
