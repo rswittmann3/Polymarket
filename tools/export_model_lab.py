@@ -40,8 +40,17 @@ def rows(results: dict, slate: dict) -> dict[str, list[dict]]:
             if isinstance(d, dict) and "slope" in d:
                 slopes.append({"id": f"{lg}|{rel}", "league": NAMES[lg], "relation": rel, "slope": d["slope"], "intercept": d["intercept"],
                                "games": d["n"], "sd": d["sd"]})
-    games = []
+    games, injuries, goalies = [], [], []
     for i, g in enumerate(slate["games"]):
+        gid = f"{g['league']}|{g['date']}|{g['away']}|{g['home']}"
+        for j, r in enumerate(g.get("injuries", [])[:10]):
+            injuries.append({"id": f"{gid}|{j}", "league": NAMES[g["league"]], "date": g["date"], "away": g["away"], "home": g["home"],
+                             "team": r["team"], "player": r["name"], "pos": r["pos"], "status": r["status"],
+                             "minutes": r.get("minutes"), "points": r.get("points"), "key": "yes" if r["key"] else "", "reported": (r.get("date") or "")[:10],
+                             "note": (r.get("note") or "")[:160]})
+        for gk in g.get("goalies", []):
+            goalies.append({"id": f"{gid}|{gk['team']}", "league": NAMES[g["league"]], "date": g["date"], "away": g["away"], "home": g["home"],
+                            "team": gk["team"], "goalie": gk["name"], "save_pct": gk.get("save_pct"), "gaa": gk.get("gaa"), "games": gk.get("games")})
         p = g["preds"]
         games.append({"id": f"{g['league']}|{g['date']}|{g['away']}|{g['home']}", "league": NAMES[g["league"]], "date": g["date"],
                       "kickoff": g.get("kickoff"), "away": g["away"], "home": g["home"], "total": g.get("total"), "total_open": g.get("total_open"),
@@ -52,7 +61,7 @@ def rows(results: dict, slate: dict) -> dict[str, list[dict]]:
                       "pred_close_total": g.get("pred_close_total"), "pred_close_spread": g.get("pred_close_spread"),
                       "total_status": (p.get("total") or {}).get("status"), "spread_status": (p.get("side") or {}).get("status"),
                       "move_status": (p.get("move_total") or p.get("move_side") or {}).get("status")})
-    return {"verdicts": verdicts, "seasons": seasons, "bets": bets, "calibration": calib, "slopes": slopes, "importances": imps, "slate": games}
+    return {"injuries": injuries, "goalies": goalies, "verdicts": verdicts, "seasons": seasons, "bets": bets, "calibration": calib, "slopes": slopes, "importances": imps, "slate": games}
 
 
 def main() -> None:

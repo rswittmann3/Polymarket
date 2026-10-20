@@ -285,3 +285,16 @@ What it found on the data up to October 2026:
 - **NBA line movement: predictable.** From the opening line plus rest, back-to-backs and recent form against the line, the model predicts the open-to-close move of both spread and total, positive in every or nearly every season tested. Rest and back-to-back status drive the spread move; recent over/under tendency drives the total move. Opening lines are less efficient than closing lines, which is expected; this is only useful against a market that reprices more slowly than the sportsbooks, and that has not been measured for Polymarket.
 
 `pm_edges/slate.py` supplies upcoming games with current and opening lines (ESPN/DraftKings for NBA and NHL, nflverse for NFL; no Odds API credits). Predictions on that slate carry the verdict for their model, so a number from a model with no skill is labelled as such.
+
+## Injuries, goalies and the Polymarket lag study
+
+`pm_edges/injuries.py` reads ESPN's current injury reports (all teams) and NHL probable starting goalies, and rates each absent player from their ESPN season line (a rotation player in basketball, a goalie or top scorer in hockey, a quarterback in football). ESPN keeps no history, so these cannot be backtested; `tools/line_poller.py` records every status change and goalie change with a timestamp so they can be tested later against line moves.
+
+Whether Polymarket reprices more slowly than the sportsbooks cannot be answered from history, because The Odds API's historical odds need a paid plan. So the poller records the timeline going forward:
+
+```bash
+nohup python tools/line_poller.py --hours 36 > data/lag/poller.log 2>&1 &   # ESPN/DraftKings every 5 min, Pinnacle every 30 min (2 credits a poll)
+python tools/lag_study.py      # after some games: Polymarket vs Pinnacle lead-lag on NBA spread and total markets
+```
+
+`lag_study.py` pulls Polymarket's own minute-level price history after the fact, picks the market whose line matches Pinnacle's, restates Pinnacle's no-vig price at that exact line, and regresses each bar's Polymarket change on the sportsbook's change one bar earlier, in the same bar and one bar later, with confidence intervals that resample whole games.

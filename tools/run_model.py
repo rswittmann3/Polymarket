@@ -18,7 +18,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from concurrent.futures import ThreadPoolExecutor
+
 from pm_edges import angles as A
+from pm_edges import injuries as I
 from pm_edges import model as M
 from pm_edges import slate as S
 from pm_edges.trends import history_frames
@@ -59,6 +62,29 @@ def league_results(lg: str, data_dir: Path) -> tuple[dict, dict]:
     return out, {"games": games, "fitted": fitted}
 
 
+def availability(lg: str, games: list[dict]) -> tuple[dict, dict]:
+    """({game id: injury rows}, {team|game: goalie}) for the slate's teams, with a per-game line for the players that matter."""
+    teams = {t for g in games for t in (g["home"], g["away"])}
+    rows = [r for r in I.report(lg) if r["team"] in teams and r["status"] in I.ACTIVE_STATUSES]
+    ids = sorted({r["athlete_id"] for r in rows if r["athlete_id"]})
+    values = {}
+    if lg in ("nba", "nhl") and ids:
+        cache = I._load()
+        with ThreadPoolExecutor(6) as pool:
+            for aid, v in zip(ids, pool.map(lambda a: I.player_value(lg, a, cache=cache), ids)):
+                values[aid] = v
+        I.CACHE.parent.mkdir(parents=True, exist_ok=True)
+        I.CACHE.write_text(json.dumps(cache))
+    inj = {f"{g['away']}@{g['home']}|{g['date']}": I.game_context(lg, g["away"], g["home"], rows, values) for g in games}
+    goalies = {}
+    if lg == "nhl":
+        for day in sorted({g["date"].replace("-", "") for g in games}):
+            for (team, eid), gk in I.probable_goalies(day).items():
+                v = I.player_value("nhl", gk["athlete_id"], cache=I._load()) if gk.get("athlete_id") else {}
+                goalies[f"{team}|{eid}"] = {**gk, "team": team, "save_pct": v.get("save_pct"), "gaa": v.get("gaa"), "games": v.get("games"), "day": day}
+    return inj, goalies
+
+
 def slate_rows(lg: str, ctx: dict, results: dict, start: date, days: int) -> list[dict]:
     games = slate_games = S.slate(lg, start, days)
     games = [g for g in slate_games if g.get("total") is not None]
@@ -76,6 +102,7 @@ def slate_rows(lg: str, ctx: dict, results: dict, start: date, days: int) -> lis
                 spec[k] = g[k]
         specs.append(spec)
     rows = M.game_rows(A.upcoming_many(ctx["games"], specs))
+    inj, goalies = availability(lg, games)
     out = []
     for g, (_, r) in zip(games, rows.iterrows()):
         item = {k: g.get(k) for k in ("league", "away", "home", "date", "kickoff", "provider", "total", "total_open", "home_spread",
@@ -95,6 +122,9 @@ def slate_rows(lg: str, ctx: dict, results: dict, start: date, days: int) -> lis
             p = float(M.predict_final(fit, x)[0])
             preds[task] = {"pred": p, "status": results["tasks"][task]["status"]["label"], "tone": results["tasks"][task]["status"]["tone"]}
         item["preds"] = preds
+        item["injuries"] = inj.get(f"{g['away']}@{g['home']}|{g['date']}", [])
+        item["goalies"] = [v for v in goalies.values() if v["team"] in (g["home"], g["away"]) and v["day"] == g["date"].replace("-", "")]
+        item["espn_id"] = g.get("espn_id")
         if "total" in preds and g.get("total") is not None:
             item["model_total"] = g["total"] + preds["total"]["pred"]
         if "side" in preds and g.get("home_spread") is not None:
