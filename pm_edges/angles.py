@@ -26,6 +26,11 @@ BREAKEVEN = 110 / 210       # win rate needed at -110
 # features
 # ---------------------------------------------------------------------------
 
+# rolling form, shifted so a game's own result never leaks into its features: (column, source expression name)
+FORM_HALFLIVES = (5, 20)
+FORM_COLS = [f"{n}_{h}" for h in FORM_HALFLIVES for n in ("ats", "tot", "marg", "pf", "pa", "winres")]
+
+
 # game-level columns carried onto both teams' rows when the games frame has them
 GAME_EXTRAS = ["week", "playoff_round", "ot", "neutral", "roof", "temp", "wind", "div_game", "weekday", "hour",
                "over_odds", "under_odds"]
@@ -72,6 +77,15 @@ def team_games(games: pd.DataFrame, kinds=("reg", "post", "playin"), keep_unplay
     t["over"] = np.sign(t["points"] - t["total"])              # 1 over, -1 under, 0 push
     t["win_prob"] = _implied(t["ml"]) / (_implied(t["ml"]) + _implied(t["opp_ml"]))     # no-vig moneyline price
     t["fav"] = (t["win_prob"] > 0.5).astype(float).where(t["win_prob"].notna())
+    # how the market has been wrong about this team lately (+ means it underrated them / the game went over)
+    t["ats_resid"] = t["margin"] + t["spread"]
+    t["tot_resid"] = t["points"] - t["total"]
+    t["win_resid"] = t["win"] - t["win_prob"]
+    for h in FORM_HALFLIVES:
+        for name, src in (("ats", "ats_resid"), ("tot", "tot_resid"), ("marg", "margin"), ("pf", "pts_for"),
+                          ("pa", "pts_against"), ("winres", "win_resid")):
+            t[f"{name}_{h}"] = t.groupby("team")[src].transform(
+                lambda x, h=h: x.shift(1).ewm(halflife=h, min_periods=3).mean())
     for name in ("div_game", "neutral"):
         if name in t:
             t[name] = pd.to_numeric(t[name], errors="coerce")
@@ -98,8 +112,9 @@ def team_games(games: pd.DataFrame, kinds=("reg", "post", "playin"), keep_unplay
     t["prev_margin"] = t.groupby("team")["margin"].shift(1)
 
     # the opponent's rest and record
-    theirs = t[["game_id", "team", "rest_days", "b2b", "season_win_pct"]].rename(columns={
-        "team": "opp", "rest_days": "opp_rest_days", "b2b": "opp_b2b", "season_win_pct": "opp_season_win_pct"})
+    theirs = t[["game_id", "team", "rest_days", "b2b", "season_win_pct", *FORM_COLS]].rename(columns={
+        "team": "opp", "rest_days": "opp_rest_days", "b2b": "opp_b2b", "season_win_pct": "opp_season_win_pct",
+        **{c: f"opp_{c}" for c in FORM_COLS}})
     t = t.merge(theirs, on=["game_id", "opp"], how="left")
     t["rest_edge"] = t["rest_days"] - t["opp_rest_days"]
 
@@ -325,6 +340,19 @@ def upcoming(games: pd.DataFrame, away: str, home: str, when, spread: float | No
     frame = pd.concat([games[games["date"] < when], pd.DataFrame([row])], ignore_index=True)
     t = team_games(frame, keep_unplayed=True)
     return t[t["game_id"] == t["game_id"].max()].reset_index(drop=True)
+
+
+def upcoming_many(games: pd.DataFrame, specs: list[dict]) -> pd.DataFrame:
+    """Feature rows (both teams) for several unplayed games at once. Each spec has away, home, date and any of the
+    games-frame columns (home_spread_close, total_close, home_spread_open, total_open, home_ml, away_ml, ...)."""
+    rows = []
+    for sp in specs:
+        when = pd.Timestamp(sp["date"])
+        rows.append({"kind": "reg", "season": season_of(when), **sp, "date": when})
+    new = pd.DataFrame(rows)
+    frame = pd.concat([games[games["date"] < new["date"].min()], new], ignore_index=True)
+    t = team_games(frame, keep_unplayed=True)
+    return t[t["game_id"] > t["game_id"].max() - len(rows)].reset_index(drop=True)
 
 
 def active_teams(rows: pd.DataFrame, query: str) -> list[str]:

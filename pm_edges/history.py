@@ -222,9 +222,10 @@ def parse_espn(types: dict[int, dict], lg: str = "nba") -> pd.DataFrame:
                 close_total, open_total = _num(pre.get("close_total")), _num(pre.get("open_total"))
                 row["total_close"] = close_total if in_range(close_total) else float(pre["overUnder"])
                 row["total_open"] = open_total if in_range(open_total) else None
-                row["home_spread_close"] = (_num(pre.get("home_close_spread")) if pre.get("home_close_spread") not in (None, "")
-                                            else pre.get("spread"))
-                row["home_spread_open"] = _num(pre.get("home_open_spread"))
+                if lg != "nhl":                                  # the hockey "spread" is the fixed 1.5 puck line, not modelled
+                    row["home_spread_close"] = (_num(pre.get("home_close_spread")) if pre.get("home_close_spread") not in (None, "")
+                                                else pre.get("spread"))
+                    row["home_spread_open"] = _num(pre.get("home_open_spread"))
                 over, under = _num(pre.get("overOdds")), _num(pre.get("underOdds"))
                 if _book_ok(over, under, 1.0, 1.15):
                     row["over_odds"], row["under_odds"] = over, under

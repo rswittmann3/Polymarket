@@ -80,7 +80,7 @@ LIBRARY: dict[str, list[tuple[str, str, str]]] = {
 # columns of the nflverse schedule row worth passing on when the game is not played yet
 NFL_UPCOMING = ["week", "weekday", "hour", "roof", "temp", "wind", "div_game", "neutral", "playoff_round",
                 "home_ml", "away_ml", "over_odds", "under_odds", "home_spread_odds", "away_spread_odds"]
-CACHE_VERSION = "v2"
+CACHE_VERSION = "v3"
 
 
 def history_frames(data_dir: Path = Path("data"), lg: str = "nba") -> tuple[pd.DataFrame, pd.DataFrame]:

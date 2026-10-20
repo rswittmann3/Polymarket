@@ -258,3 +258,30 @@ What is in each history and what to be careful about:
 Records use the posted price where the history has it (hockey totals and moneylines, football spreads and moneylines since about 2009) and flat -110 otherwise, so ROI is not simply win rate. Features available to `--angle` include `at_home`, `spread`, `total`, `ml`, `win_prob` (no-vig moneyline), `fav`, `game_num`, `is_opener`, `rest_days`, `opp_rest_days`, `rest_edge`, `b2b`, `opp_b2b`, `season_win_pct`, `opp_season_win_pct`, `prev_win`, `prev_cover`, `prev_over`, `prev_margin`, `prev_po_wins`, `prev_vs_opp_post`, `prev_vs_opp_days`, `prev_total`, `total_vs_prev`, `prev_reg_win_pct`, `total_vs_avg`, `kind` (`reg`/`post`), `season` (start year), and for football `week`, `div_game`, `dome`, `temp`, `wind`, `thu`/`mon`/`sun`/`sat`, `hour`, `neutral`, `playoff_round`. Bets are `under`, `over`, `ats` (football and basketball) and `ml`.
 
 How to read an angle: a record is worth something only if (1) it was written down before looking, (2) the sample is large, and (3) it survives dropping any one condition. The library in `pm_edges/trends.py` is written in advance. A filter with seven conditions and 13 games has 13 games of evidence however long the filter is.
+
+## Predictive models (`tools/run_model.py`)
+
+```bash
+pip install -e ".[model]"
+python tools/run_model.py                    # all leagues; writes data/model/results.json and slate.json
+python tools/export_model_lab.py             # flattens them into the row files the Model Lab dashboard reads
+```
+
+The question is not "who wins" but "can anything known before the game predict where the market is wrong". The baseline is the closing line, and every target is a residual against it:
+
+| question | target | leagues |
+|---|---|---|
+| Spread residual | home margin + home spread | NBA, NFL |
+| Total residual | points - closing total | NBA, NFL, NHL |
+| Win probability residual | home win - no-vig moneyline probability | NHL |
+| Spread / total move | closing line - opening line, from opening-line inputs only | NBA |
+
+Inputs are all pre-game: rest and back-to-backs, season record, opponent versions of each, rolling form (exponentially weighted margin, points for and against, and how the line has been missing for that team: ATS and over/under residuals), totals relative to the league's recent closing totals, weather and roof for football. Two models (ridge and a shallow gradient-boosted tree) and their average are scored **walk-forward**: season *s* is predicted by models trained on seasons before *s* only, and model settings are fixed in advance. Skill is the drop in squared error (log loss for win probability) versus predicting zero, with a standard error from the per-game differences; a placebo run shuffles each season's outcomes to confirm the pipeline finds nothing in noise. Betting simulations act on the fixed top fractions of disagreement (not an optimised threshold) at posted prices; line-move questions are scored as closing-line value in points.
+
+What it found on the data up to October 2026:
+
+- **NFL and NBA spreads and totals, NHL win probability: no skill.** t-stats near zero, about half the seasons positive, simulated ROI at or below the vig. The closing lines are well calibrated (slopes within a few percent of one).
+- **NHL totals: statistically real but too small to bet.** The closing total is too extreme (high totals come in lower, low totals higher), which a model can learn, but it is worth under a percent of the error and the top-decile bets still lose to the vig. Part of it is a persistent league-wide level bias that survives within-season shuffles.
+- **NBA line movement: predictable.** From the opening line plus rest, back-to-backs and recent form against the line, the model predicts the open-to-close move of both spread and total, positive in every or nearly every season tested. Rest and back-to-back status drive the spread move; recent over/under tendency drives the total move. Opening lines are less efficient than closing lines, which is expected; this is only useful against a market that reprices more slowly than the sportsbooks, and that has not been measured for Polymarket.
+
+`pm_edges/slate.py` supplies upcoming games with current and opening lines (ESPN/DraftKings for NBA and NHL, nflverse for NFL; no Odds API credits). Predictions on that slate carry the verdict for their model, so a number from a model with no skill is labelled as such.
