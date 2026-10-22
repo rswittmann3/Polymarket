@@ -107,3 +107,16 @@ def test_manual_trade_is_scored_like_a_flagged_edge():
     led.settle_entry(1, 1.0, T0)
     r = led.rows()[0]
     assert r["pnl"] == pytest.approx(r["shares"] * 0.48) and r["clv"] == pytest.approx(-0.005)
+
+
+def test_set_fill_replaces_the_paper_price_with_the_real_fill():
+    led = _ledger()
+    led.add_manual("g", "m", 0, "q", "Team", "moneyline", KICK, ask=0.60, fee=0.012, stake=5.0, fair=None, at=T0)
+    led.set_fill(1, shares=8.0, cost=5.0, fair=0.604)
+    row = led.rows()[0]
+    assert row["ask"] == pytest.approx(0.625) and row["fee"] == 0.0 and row["stake"] == pytest.approx(5.0) and row["shares"] == 8.0
+    assert row["edge_entry"] == pytest.approx(0.604 - 0.625) and row["fair_last"] == pytest.approx(0.604)
+    led.settle_entry(1, 1.0, T0)
+    assert led.rows()[0]["pnl"] == pytest.approx(3.0)                         # 8 shares * (1 - 0.625)
+    with pytest.raises(ValueError):
+        led.set_fill(1, shares=8.0, cost=5.0)                                 # settled entries are final

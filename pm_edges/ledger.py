@@ -121,6 +121,19 @@ class Ledger:
                  fair, None if fair is None else fair - ask - fee, fair, _iso(at)))
         return cur.rowcount == 1
 
+    def set_fill(self, entry_id: int, shares: float, cost: float, fair: float | None = None) -> None:
+        """Replace a paper entry's price with what was actually paid: `cost` is the all-in dollars for `shares` (fee included,
+        so `fee` becomes 0). Pass `fair` to set or correct the sportsbook no-vig price at entry; the edge is recomputed."""
+        row = self.conn.execute("SELECT * FROM ledger WHERE id=?", (entry_id,)).fetchone()
+        if row is None or row["status"] != "open":
+            raise ValueError(f"no open ledger entry {entry_id}")
+        ask = cost / shares
+        fair = row["fair_entry"] if fair is None else fair
+        fair_last = row["fair_last"] if fair is None or row["fair_last"] is not None else fair
+        with self.conn:
+            self.conn.execute("UPDATE ledger SET ask=?, fee=0, stake=?, shares=?, fair_entry=?, edge_entry=?, fair_last=? WHERE id=?",
+                              (ask, cost, shares, fair, None if fair is None else fair - ask, fair_last, entry_id))
+
     # -- settling --------------------------------------------------------------------------------------
 
     def settle_entry(self, entry_id: int, result: float, at: datetime) -> None:
