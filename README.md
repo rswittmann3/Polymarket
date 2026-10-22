@@ -298,3 +298,7 @@ python tools/lag_study.py      # after some games: Polymarket vs Pinnacle lead-l
 ```
 
 `lag_study.py` pulls Polymarket's own minute-level price history after the fact, picks the market whose line matches Pinnacle's, restates Pinnacle's no-vig price at that exact line, and regresses each bar's Polymarket change on the sportsbook's change one bar earlier, in the same bar and one bar later, with confidence intervals that resample whole games.
+
+## Daily forward test of the NBA line-move models
+
+The honest check on a backtest is predictions made before the games. `tools/freeze_predictions.py` fits the two open-to-close models, predicts the closing total and spread for every upcoming NBA game from ESPN's opening line, and writes `snapshots/frozen/nba_<time>.json` (never edited afterwards). `tools/score_frozen.py` scores every frozen game that has tipped against where the line closed (Pinnacle from the poller timeline when present, otherwise ESPN's DraftKings final line), keeping a game's first prediction, and reports the closing-line value in points measured from the opening line and from the line at prediction time. A daily scheduled task runs both and commits the frozen files; the Model Lab dashboard has a "Forward test" card. After about 40 games the result should be decisive either way.

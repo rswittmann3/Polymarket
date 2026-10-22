@@ -36,3 +36,33 @@ def test_scoring_counts_only_tipped_games_and_signs_clv_by_the_predicted_directi
 
 def test_nothing_to_score_before_any_game_tips():
     assert _mod().score(FROZEN, CLOSES, now=datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)) == {}
+
+
+def test_espn_fallback_fills_closes_for_tipped_games_only():
+    m = _mod()
+    frozen = {"games": [
+        {"away": "A", "home": "B", "espn_id": "1", "kickoff": "2026-10-20T23:00:00+00:00"},
+        {"away": "C", "home": "D", "espn_id": "2", "kickoff": "2026-10-23T23:00:00+00:00"}]}
+    item = {"provider": {"name": "DraftKings"}, "overUnder": 223.0, "spread": -4.5, "homeTeamOdds": {"favorite": True}}
+    calls = []
+    def fake(url, params=None):
+        calls.append(url)
+        return {"items": [item]}
+    out = m.espn_closes(frozen, {}, NOW, fake)
+    assert out[("A", "B")]["dk_total"] == 223.0 and out[("A", "B")]["dk_spread"] == -4.5
+    assert ("C", "D") not in out and len(calls) == 1                         # the second game has not tipped: no request
+    assert m._close({"dk_total": 223.0}, "total", "auto") == 223.0
+    assert m._close({"pin_total": 222.5, "dk_total": 223.0}, "total", "auto") == 222.5
+
+
+def test_pooled_keeps_a_games_first_prediction(tmp_path, monkeypatch):
+    import json
+    m = _mod()
+    monkeypatch.setattr(m, "DATA", tmp_path / "missing.jsonl")
+    base = {"away": "A", "home": "B", "date": "2026-10-20", "espn_id": "1", "kickoff": "2026-10-20T23:00:00+00:00",
+            "total_open": 220.0, "total": 221.0, "home_spread_open": -3.0, "home_spread": -3.0}
+    (tmp_path / "nba_1.json").write_text(json.dumps({"games": [{**base, "pred_close_total": 222.0, "pred_close_spread": -3.0}]}))
+    (tmp_path / "nba_2.json").write_text(json.dumps({"games": [{**base, "pred_close_total": 219.0, "pred_close_spread": -3.0}]}))
+    item = {"provider": {"name": "DraftKings"}, "overUnder": 223.0, "spread": -3.0, "homeTeamOdds": {"favorite": True}}
+    out = m.pooled(sorted(tmp_path.glob("nba_*.json")), now=NOW, get=lambda url, params=None: {"items": [item]})
+    assert out["total"]["games"] == 1 and out["total"]["from_open"]["mean_clv_points"] == pytest.approx(3.0)      # used the 222 prediction

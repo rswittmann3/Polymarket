@@ -104,6 +104,24 @@ def lag_rows(data_dir: Path) -> list[dict]:
     return [{"id": k, "measure": m, "value": v, "note": n} for k, m, v, n in rows]
 
 
+def forward_rows(data_dir: Path) -> tuple[list[dict], list[dict]]:
+    """Frozen-prediction scores (tools/score_frozen.py): per-game detail and a summary row per question."""
+    path = data_dir / "model" / "forward.json"
+    if not path.exists():
+        return [], []
+    r = json.loads(path.read_text())
+    detail, summary = [], []
+    for kind, st in r.items():
+        for label, key in (("From the opening line", "from_open"), ("From the line when predicted", "from_then")):
+            v = st[key]
+            summary.append({"id": f"{kind}|{key}", "question": "Total" if kind == "total" else "Spread", "basis": label, "games": st["games"],
+                            "mean_clv_points": v["mean_clv_points"], "se": v["se"], "moved": v["moved"], "right": v["direction_right"]})
+        for i, d in enumerate(st["detail"]):
+            detail.append({"id": f"{kind}|{i}", "date": d["date"], "game": d["game"], "question": "Total" if kind == "total" else "Spread",
+                           "open": d["open"], "then": d["then"], "predicted": d["pred"], "closed": d["close"]})
+    return detail, summary
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -115,6 +133,7 @@ def main() -> None:
     out_rows = rows(results, slate)
     out_rows["ledger"], out_rows["clv_summary"] = ledger_rows(a.data_dir)
     out_rows["lag_summary"] = lag_rows(a.data_dir)
+    out_rows["forward"], out_rows["forward_summary"] = forward_rows(a.data_dir)
     for name, r in out_rows.items():
         (out / f"{name}.json").write_text(json.dumps(r))
         print(name, len(r))
