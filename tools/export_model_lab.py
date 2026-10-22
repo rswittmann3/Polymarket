@@ -89,6 +89,21 @@ def ledger_rows(data_dir: Path) -> tuple[list[dict], list[dict]]:
                    "t_stat": s.clv_t, "beat_close_pct": pct(s.beat_close), "roi_pct": pct(s.roi), "pnl": s.pnl}]
 
 
+def lag_rows(data_dir: Path) -> list[dict]:
+    """A few plain measures from the Polymarket-vs-Pinnacle study (empty when it has not run)."""
+    path = data_dir / "lag" / "results.json"
+    if not path.exists():
+        return []
+    r = json.loads(path.read_text())
+    g1 = (r.get("gap_rule") or {}).get("0.01", {})
+    rows = [("games", "Games compared", r["games"], "Spread and total markets, Polymarket vs Pinnacle"),
+            ("bars", "Price comparisons", r["bars"], "Each is one poll of both markets before tip-off"),
+            ("book_moves", "Pinnacle line moves observed", r["book_moves"], "Too few to say who moves first"),
+            ("gap", "Mean gap, percentage points", 100 * r["mean_abs_gap"], "Polymarket price minus Pinnacle's no-vig price, absolute"),
+            ("trades", "Gap-rule trades at 1 point", g1.get("trades", 0), "Buy when Polymarket is at least a point cheaper than Pinnacle")]
+    return [{"id": k, "measure": m, "value": v, "note": n} for k, m, v, n in rows]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -99,6 +114,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     out_rows = rows(results, slate)
     out_rows["ledger"], out_rows["clv_summary"] = ledger_rows(a.data_dir)
+    out_rows["lag_summary"] = lag_rows(a.data_dir)
     for name, r in out_rows.items():
         (out / f"{name}.json").write_text(json.dumps(r))
         print(name, len(r))

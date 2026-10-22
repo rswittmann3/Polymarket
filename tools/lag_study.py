@@ -98,13 +98,16 @@ def build_rows(min_bars: int = 3) -> pd.DataFrame:
     cfg = Config().apply_league("nba")
     models = {"spreads": model_for("spread", cfg), "totals": model_for("total", cfg)}
     pins = [json.loads(l) for l in (DATA / "timeline.jsonl").read_text().splitlines() if '"src": "pinnacle"' in l]
+    # Pinnacle revises a game's start time (23:00 becomes 23:15 once it is delayed), so a game is its teams and local date,
+    # and its tip is the earliest start time quoted: nothing after that counts as pre-game.
     games: dict[tuple, list[dict]] = {}
     for r in pins:
         if r.get("home") and r.get("away"):
-            games.setdefault((r["away"], r["home"], r["commence"]), []).append(r)
+            local = utc(r["commence"]).astimezone(ET).date()
+            games.setdefault((r["away"], r["home"], local), []).append(r)
     rows = []
-    for (away, home, commence), series in games.items():
-        tip = utc(commence)
+    for (away, home, _day), series in games.items():
+        tip = min(utc(s["commence"]) for s in series)
         series = sorted((s for s in series if utc(s["ts"]) < tip - timedelta(minutes=5)), key=lambda s: s["ts"])
         if len(series) < min_bars:
             continue
@@ -117,7 +120,7 @@ def build_rows(min_bars: int = 3) -> pd.DataFrame:
             ref = next((fair_at(s, kind, home) for s in reversed(series) if fair_at(s, kind, home)), None)
             if ref is None:
                 continue
-            ms = [m for m in ev["markets"] if m.get("sportsMarketType") == kind and m.get("line") is not None and m.get("acceptingOrders", True) is not False]
+            ms = [m for m in ev["markets"] if m.get("sportsMarketType") == kind and m.get("line") is not None]
             def line_of(m): return (m["line"] if team_is_home(m["question"], home) else -m["line"]) if kind == "spreads" else m["line"]
             ms = [m for m in ms if abs(line_of(m) - ref[0]) <= 1.0]
             if not ms:
@@ -130,7 +133,7 @@ def build_rows(min_bars: int = 3) -> pd.DataFrame:
                 f = fair_at(s, kind, home)
                 ts = utc(s["ts"])
                 pm_p = pm_price_at(hist, ts.timestamp())
-                if f is None or pm_p is None:
+                if f is None or pm_p is None or abs(f[0] - line) > 1.0:        # converting across more than a point is model noise, not a gap
                     continue
                 rows.append({"game": f"{away}@{home}", "kind": kind, "ts": s["ts"], "market_id": str(m["id"]), "hours_to_tip": (tip - ts).total_seconds() / 3600,
                              "pm_line": line, "pin_line": f[0], "volume": m.get("volumeNum"),
