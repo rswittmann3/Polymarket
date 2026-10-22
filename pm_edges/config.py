@@ -76,6 +76,7 @@ class Config:
     bookmakers: str | None = DEFAULT_BOOKMAKERS   # used instead of regions when set
     regions: str = "us,eu"          # eu is where Pinnacle is listed
     fetch_alternates: bool = True
+    include_props: bool = True        # False: never ask the books for player props (each prop market costs a credit)
     # Which game periods to request odds for. Each period adds market keys,
     # and every key costs credits: full | halves (full + h1/h2) | all (+ quarters)
     scope: str = "all"

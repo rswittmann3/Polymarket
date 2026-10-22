@@ -85,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
                    "incl. Pinnacle; 10 books cost the same as 1 region)")
     e.add_argument("--regions", help="use Odds API regions instead of --bookmakers, e.g. us,eu")
     e.add_argument("--no-alternates", action="store_true", help="never request alternate lines")
+    e.add_argument("--no-props", action="store_true", help="never request player props (saves Odds API credits)")
     e.add_argument("--scope", choices=["full", "halves", "all"],
                    help="periods to request odds for (default all; fewer = fewer credits)")
     e.add_argument("--no-history", action="store_true", help="skip CLOB price history (drift)")
@@ -119,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         cfg.confirm_sharp = True
     if getattr(args, "no_alternates", False):
         cfg.fetch_alternates = False
+    if getattr(args, "no_props", False):
+        cfg.include_props = False
     if getattr(args, "bookmakers", None):
         cfg.bookmakers = args.bookmakers
     elif getattr(args, "regions", None):

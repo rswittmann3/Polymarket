@@ -93,7 +93,8 @@ def fetch_books(run: Run, http: JsonClient) -> None:
         event = odds.find_event(spec.home, spec.away, spec.date)
         # only liquid, in-scope markets cost credits
         live = [m for m in checked(run.markets, cfg)
-                if any(o.selection and cfg.in_scope(o.selection.period) for o in m.outcomes)]
+                if any(o.selection and cfg.in_scope(o.selection.period) for o in m.outcomes)
+                and (cfg.include_props or m.market_type != "player_prop")]
         keys = needed_market_keys(live)
         resp = _event_odds_with_fallback(odds, event["id"], keys, run)
         rows = normalize_event_odds(resp.body, spec.game_id, resp.fetched_at, spec.league)

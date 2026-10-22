@@ -122,6 +122,39 @@ def forward_rows(data_dir: Path) -> tuple[list[dict], list[dict]]:
     return detail, summary
 
 
+WHY = (("model-converted", "Estimated: the books do not quote this exact line"), ("edge below", "Gap is under the minimum edge"),
+       ("Pinnacle does not", "Pinnacle does not confirm it"), ("one soft book", "Only one soft book disagrees"),
+       ("liquidity", "Market too thin"), ("stale", "Quote looks stale"))
+
+
+def scan_rows(data_dir: Path) -> tuple[list[dict], list[dict], list[dict]]:
+    """(edges, one summary row, per-game rows) from tools/scan_slate.py, all leagues scanned so far."""
+    edges, games, scans = [], [], []
+    for path in sorted((data_dir / "scan").glob("*.json")):
+        r = json.loads(path.read_text())
+        scans.append(r)
+        for e in r["edges"]:
+            why = next((v for k, v in WHY if k in (e.get("why_not") or "")), (e.get("why_not") or "")[:60])
+            edges.append({"id": e["id"], "league": e["league"], "game": e["game"], "date": e["date"], "bet": e["bet"], "market": e["market"],
+                          "ask": e["ask"], "fair": e["fair"], "edge_pts": e["edge_pts"], "pin_edge_pts": e["pin_edge_pts"], "books": e["books"],
+                          "dollars": e["dollars_with_edge"] if e["dollars_with_edge"] is not None else e["dollars_at_ask"],
+                          "liquidity": e["liquidity"], "status": e["status"], "confidence": e["confidence"], "why": "" if e["status"] == "flagged" else why})
+        games += [{"id": f"{r['league']}|{g['game']}", "league": r["league"].upper(), **{k: g[k] for k in ("game", "markets_checked", "outcomes_priced", "flagged")}}
+                  for g in r["games"]]
+    if not scans:
+        return [], [], []
+    if not edges:                      # an empty file would not load; one inert row keeps the dataset readable
+        edges = [{"id": "none", "league": "", "game": "", "date": "", "bet": "", "market": "", "ask": None, "fair": None, "edge_pts": 0,
+                  "pin_edge_pts": None, "books": 0, "dollars": None, "liquidity": 0, "status": "none", "confidence": "low", "why": ""}]
+    flagged = [e for e in edges if e["status"] == "flagged"]
+    summary = [{"id": "scan", "scanned_at": min(r["scanned_at"] for r in scans)[:16].replace("T", " "), "games": len(games),
+                "markets": sum(g["markets_checked"] for g in games), "flagged": len(flagged),
+                "best_flagged": max((e["edge_pts"] for e in flagged), default=None),
+                "best_gap": max((e["edge_pts"] for e in edges), default=None),
+                "min_edge": scans[0]["min_edge_pts"], "max_stake": scans[0]["max_stake"]}]
+    return edges, summary, games
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
@@ -134,6 +167,7 @@ def main() -> None:
     out_rows["ledger"], out_rows["clv_summary"] = ledger_rows(a.data_dir)
     out_rows["lag_summary"] = lag_rows(a.data_dir)
     out_rows["forward"], out_rows["forward_summary"] = forward_rows(a.data_dir)
+    out_rows["scan_edges"], out_rows["scan_summary"], out_rows["scan_games"] = scan_rows(a.data_dir)
     for name, r in out_rows.items():
         (out / f"{name}.json").write_text(json.dumps(r))
         print(name, len(r))
