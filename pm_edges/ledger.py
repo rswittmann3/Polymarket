@@ -108,6 +108,19 @@ class Ledger:
                     refreshed += 1
         return added, refreshed
 
+    def add_manual(self, game_id: str, market_id: str, outcome_index: int, question: str, outcome: str, market_type: str,
+                   kickoff: str | None, ask: float, fee: float, stake: float, fair: float | None, at: datetime) -> bool:
+        """Record a paper trade chosen by hand (a tail, a hunch) so it is scored like any flagged edge.
+        `fair` is the sportsbook no-vig price at entry when known; it stands in for the close until a scan refreshes it."""
+        shares = stake / (ask + fee)
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO ledger (game_id, market_id, outcome_index, question, outcome, market_type, entered_at, kickoff, ask, fee,"
+                " stake, shares, fair_entry, edge_entry, fair_last, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (game_id, market_id, outcome_index, question, outcome, market_type, _iso(at), _kickoff(kickoff), ask, fee, stake, shares,
+                 fair, None if fair is None else fair - ask - fee, fair, _iso(at)))
+        return cur.rowcount == 1
+
     # -- settling --------------------------------------------------------------------------------------
 
     def settle_entry(self, entry_id: int, result: float, at: datetime) -> None:

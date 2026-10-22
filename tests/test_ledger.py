@@ -96,3 +96,14 @@ def test_settle_open_uses_the_lookup_and_skips_games_not_started():
 def test_ledger_command_on_an_empty_database(tmp_path, capsys):
     code = cli.main(["ledger", "--data-dir", str(tmp_path)])
     assert code == 0 and "ledger is empty" in capsys.readouterr().out
+
+
+def test_manual_trade_is_scored_like_a_flagged_edge():
+    led = _ledger()
+    assert led.add_manual("nba-den-okc", "5769221", 1, "Spread: Thunder (-8.5)", "Nuggets", "spread", KICK, 0.52, 0.0, 5.0, 0.515, T0)
+    assert not led.add_manual("nba-den-okc", "5769221", 1, "x", "y", "spread", KICK, 0.52, 0.0, 5.0, 0.515, T0)       # one entry per outcome
+    r = led.rows()[0]
+    assert r["shares"] == pytest.approx(5.0 / 0.52) and r["edge_entry"] == pytest.approx(-0.005) and r["kickoff"] == "2026-10-20T23:00:00+00:00"
+    led.settle_entry(1, 1.0, T0)
+    r = led.rows()[0]
+    assert r["pnl"] == pytest.approx(r["shares"] * 0.48) and r["clv"] == pytest.approx(-0.005)
