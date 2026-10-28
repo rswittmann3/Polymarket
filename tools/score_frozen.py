@@ -121,22 +121,30 @@ def pooled(paths: list[Path], book: str = "auto", now: datetime | None = None, g
         seen |= {(g["away"], g["home"], g["date"]) for g in frozen["games"]}
         closes = espn_closes(frozen, timeline, now, get)
         for kind, st in score(frozen, closes, book, now).items():
-            rows[kind] += [{**d, "frozen": path.name} for d in st["detail"]]
+            rows[kind] += [{**d, "frozen": path.name, "fresh": "history_through" in frozen} for d in st["detail"]]
     out = {}
     for kind, rs in rows.items():
         if not rs:
             continue
-        stat = {"games": len(rs)}
-        for label, base in (("from_open", "open"), ("from_then", "then")):
-            pred = np.array([r["pred"] - r[base] for r in rs])
-            act = np.array([r["close"] - r[base] for r in rs])
-            clv = np.sign(pred) * act
-            moved = act != 0
-            stat[label] = {"mean_clv_points": float(clv.mean()), "se": float(clv.std(ddof=1) / math.sqrt(len(clv))) if len(clv) > 1 else None,
-                           "direction_right": int(((np.sign(pred) == np.sign(act)) & moved).sum()), "moved": int(moved.sum())}
+        stat = _stat(rs)
+        stat["fresh_only"] = _stat([r for r in rs if r["fresh"]])      # files frozen after the history refresh was added
         stat["detail"] = rs
         out[kind] = stat
     return out
+
+
+def _stat(rs: list[dict]) -> dict:
+    stat = {"games": len(rs)}
+    if not rs:
+        return stat
+    for label, base in (("from_open", "open"), ("from_then", "then")):
+        pred = np.array([r["pred"] - r[base] for r in rs])
+        act = np.array([r["close"] - r[base] for r in rs])
+        clv = np.sign(pred) * act
+        moved = act != 0
+        stat[label] = {"mean_clv_points": float(clv.mean()), "se": float(clv.std(ddof=1) / math.sqrt(len(clv))) if len(clv) > 1 else None,
+                       "direction_right": int(((np.sign(pred) == np.sign(act)) & moved).sum()), "moved": int(moved.sum())}
+    return stat
 
 
 def main() -> None:

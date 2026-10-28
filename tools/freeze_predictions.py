@@ -17,15 +17,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import fetch_history
 from pm_edges import angles as A
 from pm_edges import model as M
 from pm_edges import slate as S
 from pm_edges.trends import history_frames
 
 
-def freeze(data_dir: Path, out_dir: Path, days: int = 2, now: datetime | None = None) -> Path | None:
+def freeze(data_dir: Path, out_dir: Path, days: int = 2, now: datetime | None = None, refresh: bool = True) -> Path | None:
     warnings.filterwarnings("ignore")
     now = now or datetime.now(timezone.utc)
+    if refresh:                                          # without the season's finished games, form and rest days are last spring's
+        end_year = now.year + 1 if now.month >= 9 else now.year
+        fetch_history.fetch_espn("nba", [end_year], workers=8)
     games, _ = history_frames(data_dir, "nba")
     frame = M.game_frame(A.team_games(games))
     fits = {t: M.fit_final(frame, t, "nba") for t in M.MOVE_TASKS}
@@ -49,7 +53,9 @@ def freeze(data_dir: Path, out_dir: Path, days: int = 2, now: datetime | None = 
                     "pred_close_spread": (g["home_spread_open"] + pred["move_side"]) if g.get("home_spread_open") is not None else None})
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"nba_{now:%Y%m%dT%H%MZ}.json"
-    path.write_text(json.dumps({"saved_at": now.isoformat(timespec="seconds"), "games": out}, indent=1))
+    played = games[games["kind"].isin(["reg", "post", "playin"]) & games["home_pts"].notna()]
+    path.write_text(json.dumps({"saved_at": now.isoformat(timespec="seconds"), "history_through": f"{played['date'].max():%Y-%m-%d}",
+                                "games": out}, indent=1))
     return path
 
 
@@ -58,6 +64,7 @@ if __name__ == "__main__":
     ap.add_argument("--data-dir", type=Path, default=Path("data"))
     ap.add_argument("--out", type=Path, default=Path("snapshots/frozen"))
     ap.add_argument("--days", type=int, default=2)
+    ap.add_argument("--no-refresh", action="store_true", help="do not fetch the latest finished games first")
     a = ap.parse_args()
-    p = freeze(a.data_dir, a.out, a.days)
+    p = freeze(a.data_dir, a.out, a.days, refresh=not a.no_refresh)
     print(f"froze {len(json.loads(p.read_text())['games'])} games: {p}" if p else "no upcoming games with opening lines")

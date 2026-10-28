@@ -66,3 +66,18 @@ def test_pooled_keeps_a_games_first_prediction(tmp_path, monkeypatch):
     item = {"provider": {"name": "DraftKings"}, "overUnder": 223.0, "spread": -3.0, "homeTeamOdds": {"favorite": True}}
     out = m.pooled(sorted(tmp_path.glob("nba_*.json")), now=NOW, get=lambda url, params=None: {"items": [item]})
     assert out["total"]["games"] == 1 and out["total"]["from_open"]["mean_clv_points"] == pytest.approx(3.0)      # used the 222 prediction
+
+
+def test_pooled_reports_the_games_frozen_after_the_history_refresh_separately(tmp_path, monkeypatch):
+    import json
+    m = _mod()
+    monkeypatch.setattr(m, "DATA", tmp_path / "missing.jsonl")
+    def game(away, pred):
+        return {"away": away, "home": "B", "date": "2026-10-20", "espn_id": away, "kickoff": "2026-10-20T23:00:00+00:00", "total_open": 220.0,
+                "total": 221.0, "home_spread_open": -3.0, "home_spread": -3.0, "pred_close_total": pred, "pred_close_spread": -3.0}
+    (tmp_path / "nba_1.json").write_text(json.dumps({"games": [game("A", 222.0)]}))                                     # no history_through: stale features
+    (tmp_path / "nba_2.json").write_text(json.dumps({"history_through": "2026-10-19", "games": [game("C", 219.0)]}))
+    item = {"provider": {"name": "DraftKings"}, "overUnder": 223.0, "spread": -3.0, "homeTeamOdds": {"favorite": True}}
+    out = m.pooled(sorted(tmp_path.glob("nba_*.json")), now=NOW, get=lambda url, params=None: {"items": [item]})["total"]
+    assert out["games"] == 2 and out["fresh_only"]["games"] == 1
+    assert out["fresh_only"]["from_open"]["mean_clv_points"] == pytest.approx(-3.0)      # predicted a fall, the line rose 3

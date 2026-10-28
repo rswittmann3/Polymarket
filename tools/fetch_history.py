@@ -82,7 +82,7 @@ def fetch_espn(league: str, seasons: list[int], workers: int, odds_from: int = 0
 
     def day(d: date):
         path = ROOT / "espn_scoreboard" / f"{d:%Y%m%d}.json"
-        if path.exists():
+        if path.exists() and d < date.today() - timedelta(days=3):         # recent days were cached before their games finished
             return json.loads(path.read_text())
         r = get(client, score_url(league), {"dates": f"{d:%Y%m%d}", "limit": 100})
         if r is None:
