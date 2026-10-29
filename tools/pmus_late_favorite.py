@@ -33,7 +33,7 @@ from pathlib import Path
 import httpx
 import websockets
 
-from pm_edges.margin import edge_after_risk, lead_z, max_price, reversal_ub, sigma_ref
+from pm_edges.margin import edge_after_risk, lead_z, max_price, reversal_est, reversal_ub, sigma_ref
 from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
@@ -293,10 +293,12 @@ class Bot:
                 why = f"margin: index price has {mv['side']} ahead (z={mv['z']:+.1f}), book favors {side}"
             else:
                 mv["ub"] = reversal_ub(mv["left"], abs(mv["z"]), mv["exact"])
-                mv["edge"] = edge_after_risk(ask, taker_fee(ask, 1.0), mv["ub"])
+                mv["rev"] = reversal_est(mv["left"], abs(mv["z"]), mv["exact"])     # predicted loss probability, for calibration
+                mv["risk"] = mv["rev"] if self.a.risk == "point" else mv["ub"]
+                mv["edge"] = edge_after_risk(ask, taker_fee(ask, 1.0), mv["risk"])
                 if mv["edge"] < self.a.min_edge:
-                    why = (f"margin: lead z={abs(mv['z']):.1f} with {mv['left']:.0f}s left can still reverse up to "
-                           f"{mv['ub']:.1%}, edge {mv['edge'] * 100:+.1f}c at {ask:.2f}")
+                    why = (f"margin: lead z={abs(mv['z']):.1f} with {mv['left']:.0f}s left reverses about "
+                           f"{mv['rev']:.1%} (up to {mv['ub']:.1%}), edge {mv['edge'] * 100:+.1f}c at {ask:.2f}")
         if why:
             if (slug, why.split()[0]) not in self.skipped:
                 self.skipped.add((slug, why.split()[0]))
@@ -312,7 +314,7 @@ class Bot:
             return
         fee = taker_fee(ask, qty)
         self.say(f"{asset} {slug[-6:]} T-{left:.0f}s favorite {side} @ {ask:.2f} -> BUY {qty} "
-                 f"(${qty * ask:.2f}) z={abs(mv['z']):.1f} reversal<={mv['ub']:.1%} edge {mv['edge'] * 100:+.1f}c "
+                 f"(${qty * ask:.2f}) z={abs(mv['z']):.1f} predicted loss {mv['rev']:.1%} (<= {mv['ub']:.1%}) edge {mv['edge'] * 100:+.1f}c "
                  f"{'LIVE' if self.a.live else 'dry'}")
         rec = {"asset": asset, "slug": slug, "t": round(now), "left": round(left), "side": side, "ask": ask,
                "qty": qty, "live": self.a.live, "bid": book.bids[0], "offer": book.offers[0],
@@ -326,7 +328,7 @@ class Bot:
             # Offers flicker (one vanished within 50 ms of our order), so a limit one cent past the quote misses.
             # An IOC order pays only what is actually offered, so allow up to the highest price that still clears
             # the edge rule: price improvement is kept, and we never pay more than the model says is worth it.
-            top = min(0.99, max(ask, max_price(mv["ub"], self.a.min_edge) or ask))
+            top = min(0.99, max(ask, max_price(mv["risk"], self.a.min_edge) or ask))
             if intent.endswith("LONG"):
                 lim = math.floor(top * 100 + 1e-9) / 100
             else:   # Down is bought as a short: its price is 1 - the long price, so a higher Down price is a lower long price
@@ -433,7 +435,9 @@ def main() -> None:
     ap.add_argument("--live", action="store_true", help="send real orders (default: dry run)")
     ap.add_argument("--assets", default="btc,eth,sol,xrp")
     ap.add_argument("--usd", type=float, default=1.0, help="stake per trade (max 5)")
-    ap.add_argument("--min-ask", type=float, default=0.95)
+    ap.add_argument("--min-ask", type=float, default=0.90)
+    ap.add_argument("--risk", choices=("point", "ub"), default="point",
+                    help="edge test uses the table's expected reversal rate (point) or its 95%% upper bound (ub)")
     ap.add_argument("--max-ask", type=float, default=0.99)
     ap.add_argument("--t-max", type=float, default=100.0, help="start looking this many seconds before the end")
     ap.add_argument("--max-spread", type=float, default=0.08, help="skip books wider than this (bid/offer)")

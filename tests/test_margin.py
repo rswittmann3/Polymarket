@@ -77,3 +77,11 @@ def test_max_price_is_the_highest_ask_that_still_clears_the_edge():
     assert edge_after_risk(p + 0.01, 0.0695 * (p + 0.01) * (0.99 - p), 0.015) < 0.005   # one more cent is too dear
     assert max_price(0.50, 0.005) is not None and max_price(0.50, 0.005) < 0.5           # coin flips only below fair value
     assert max_price(1.0, 0.0) is None                                                    # never buy a sure loser
+
+
+def test_point_estimate_sits_between_the_floor_and_the_upper_bound():
+    from pm_edges.margin import MODEL_RISK_FLOOR, reversal_est
+    for left, z in ((30, 3.0), (60, 1.2), (90, 2.2), (120, 4.5)):
+        est, ub = reversal_est(left, z), reversal_ub(left, z)
+        assert MODEL_RISK_FLOOR <= est <= ub
+    assert reversal_est(60, 0.2) > reversal_est(60, 2.5)           # bigger lead, lower expected reversal rate

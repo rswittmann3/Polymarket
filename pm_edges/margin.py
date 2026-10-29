@@ -82,3 +82,21 @@ def max_price(ub: float, min_edge: float, theta: float = 0.0695) -> float | None
         if (1.0 - ub) - p - theta * p * (1 - p) >= min_edge:
             best = p
     return best
+
+
+MODEL_RISK_FLOOR = 0.003   # even a cell with zero observed reversals keeps this much risk (7 days is a short history)
+
+
+def reversal_est(left: float, z_abs: float, exact: bool = False) -> float:
+    """Expected reversal rate (the table's point estimate, not the 95% upper bound), floored at MODEL_RISK_FLOOR.
+    Used to size an edge when the goal is a fair expected value; reversal_ub is the cautious version."""
+    if left > MAX_LEFT:
+        return 1.0
+    table = _TABLES["exact" if exact else "approx"]
+    bucket = next(b for b in _BUCKETS if left <= b)
+    row = table[str(bucket)][0]
+    for r in table[str(bucket)]:
+        if z_abs >= r["z_lo"]:
+            row = r
+    rate = row["rev"] / row["n"] if row["n"] else 1.0
+    return min(reversal_ub(left, z_abs, exact), max(rate, MODEL_RISK_FLOOR))

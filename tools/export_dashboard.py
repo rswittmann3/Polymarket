@@ -98,7 +98,8 @@ def build_trades(records: list[dict]) -> list[dict]:
         bid, offer = r.get("bid"), r.get("offer")
         book = f"long bid {bid[0]:.2f} / offer {offer[0]:.2f}" if bid and offer else ""
         mg = r.get("margin")
-        why = f"; lead z={abs(mg['z']):.1f}, reversal risk up to {mg['ub']:.1%}" if mg and "ub" in mg else ""
+        why = (f"; lead z={abs(mg['z']):.1f}, predicted loss {mg['rev']:.1%} (up to {mg['ub']:.1%})" if mg and "rev" in mg
+               else f"; lead z={abs(mg['z']):.1f}, reversal risk up to {mg['ub']:.1%}" if mg and "ub" in mg else "")
         ups = [{"t": iso(r["t"]), "text": f"Decided {side} at {quoted:.2f}, {r.get('left', 0)}s left ({book}){why}"}]
         row = {"time": iso(r["t"]), "asset": asset, "window": f"{datetime.fromtimestamp(start, timezone.utc):%H:%M}",
                "side": side, "quoted": quoted, "fill": None, "qty": None, "cost": None, "status": "",

@@ -75,7 +75,7 @@ def _bot(tmp_path, px, px_ok_at):
     args = types.SimpleNamespace(assets=["btc"], max_feed_age=8.0, feed_poll=3.0, fresh=True, live=False, stop_on_any_loss=False,
                                  t_min=15.0, t_max=100.0, min_ask=0.95, max_ask=0.99, usd=1.0, slip=0.01, min_edge=0.005,
                                  max_spread=0.08, last_tol=0.03, drop_secs=20.0, max_drop=0.03, max_off_high=0.05,
-                                 max_trades=60, max_spend=100.0, max_attempts=3)
+                                 max_trades=60, max_spend=100.0, max_attempts=3, risk="point")
     late.STATE = tmp_path / "state.json"
     b = late.Bot(args, None, None, io.StringIO())
     b.px = {"btc": px}
