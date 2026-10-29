@@ -50,7 +50,8 @@ def market_result(asset: str, start: float):
                 yes, no = (float(x) for x in json.loads(m["outcomePrices"]))
                 res = "Up" if yes > no else "Down" if no > yes else None
         break
-    _RES[slug] = res
+    if res is not None:      # never cache "not resolved yet": a long-running server must ask again
+        _RES[slug] = res
     return res
 
 
@@ -185,7 +186,27 @@ def build_account() -> dict:
             "stop_all": bool(state.get("stop_all"))}
 
 
+def snapshot() -> dict:
+    """Everything the dashboard page needs, fresh."""
+    trades = build_trades(load_records())
+    try:
+        account = build_account()
+    except Exception as e:   # no credentials / exchange unreachable: the page still shows the orders
+        account = {"error": str(e)[:200], "updated": iso(time_now()), "bot": "Running" if bot_running() else "Stopped",
+                   "balance": None, "buying_power": None, "start_balance": START_BALANCE, "halted": "", "stop_all": False}
+    return {"trades": trades, "account": account, "generated": iso(time_now())}
+
+
+def render_html(snap: dict | None = None) -> str:
+    tpl = (Path(__file__).parent / "dashboard_template.html").read_text()
+    return tpl.replace("/*EMBED*/null", json.dumps(snap) if snap else "null")
+
+
 def main() -> None:
+    if len(sys.argv) >= 3 and sys.argv[1] == "--html":
+        Path(sys.argv[2]).write_text(render_html(snapshot()))
+        print("wrote", sys.argv[2])
+        return
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     trades = build_trades(load_records())

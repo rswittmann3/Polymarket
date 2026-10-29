@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Late Favorite Live</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --fg: #15181d; --muted: #667085; --line: #e3e6eb;
+    --ok: #17803d; --bad: #c0392b; --warn: #a15c07; --accent: #2f5fd0; --grid: #eceff3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --panel: #171b21; --fg: #e8ebf0; --muted: #98a1b0; --line: #262c35;
+      --ok: #4cc17a; --bad: #ff7b6b; --warn: #e0a84a; --accent: #7aa2ff; --grid: #1f252d; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216; --panel: #171b21; --fg: #e8ebf0; --muted: #98a1b0; --line: #262c35;
+    --ok: #4cc17a; --bad: #ff7b6b; --warn: #e0a84a; --accent: #7aa2ff; --grid: #1f252d; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+         font-variant-numeric: tabular-nums; padding: 20px max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); }
+  .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; }
+  h1 { font: 400 1.7rem/1.15 Georgia, "Times New Roman", serif; margin: 0 0 4px; }
+  .take { margin: 0; color: var(--muted); }
+  .take b { color: var(--fg); font-weight: 600; }
+  .ctl { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; font-size: 12px; color: var(--muted); }
+  .ctl .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .55; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .pill { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; color: var(--fg); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .pill.ok::before { background: var(--ok); } .pill.bad::before { background: var(--bad); }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); } .muted { color: var(--muted); }
+  .msg { font-size: 12px; min-height: 1.3em; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+  .tile, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .tile .l { font-size: 12px; color: var(--muted); }
+  .tile .v { font: 400 1.9rem/1.15 Georgia, "Times New Roman", serif; margin: 2px 0; }
+  .tile .s { font-size: 12px; color: var(--muted); } .tile .s b { color: var(--fg); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+  .card h2 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+  .card .sub { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+  .scroll { overflow: auto; max-height: 26rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--muted); font-weight: 500; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .n { text-align: right; }
+  td.last { color: var(--muted); min-width: 14rem; }
+  ol { list-style: none; margin: 0; padding: 0; max-height: 22rem; overflow: auto; }
+  li { display: grid; grid-template-columns: 4.6rem 2.6rem 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  svg { display: block; width: 100%; height: 240px; }
+  .chart { position: relative; min-height: 240px; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 12px; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+  @media (max-width: 640px) {
+    .hide-s { display: none; }
+    .ctl { align-items: flex-start; } .ctl .row { justify-content: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="head">
+    <div>
+      <h1>Late Favorite Live</h1>
+      <p class="take" id="take">Loading…</p>
+    </div>
+    <div class="ctl">
+      <div class="row"><span class="pill" id="bot">Bot</span><span>Data as of <b id="asof">—</b> UTC (<span id="age">—</span> ago)</span></div>
+      <div class="row">
+        <label><input type="checkbox" id="auto"> Auto-refresh every 15 s</label>
+        <button id="refresh" type="button">Refresh data</button>
+      </div>
+      <div class="msg" id="msg" role="status"></div>
+    </div>
+  </header>
+
+  <section class="tiles" aria-label="Headline figures">
+    <div class="tile"><div class="l">Realized P/L</div><div class="v" id="t-net">—</div><div class="s">Settled orders only, fees included</div></div>
+    <div class="tile"><div class="l">Win rate</div><div class="v" id="t-wr">—</div><div class="s"><b id="t-rec">—</b> wins to losses</div></div>
+    <div class="tile"><div class="l">Open now</div><div class="v" id="t-open">—</div><div class="s"><b id="t-stake">—</b> staked, settles when its window closes</div></div>
+    <div class="tile"><div class="l">Account balance</div><div class="v" id="t-bal">—</div><div class="s"><b id="t-chg">—</b> since the first order, <b id="t-bp">—</b> buying power</div></div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h2>Cumulative P/L</h2><p class="sub">Settled orders in the order placed. Red dots are losses.</p><div class="chart" id="chart"></div></div>
+    <div class="card"><h2>By asset</h2><p class="sub">An asset stops trading after its own first loss.</p>
+      <div class="scroll"><table><thead><tr><th>Asset</th><th class="n">Filled</th><th>W–L</th><th class="n">P/L</th><th>Status</th></tr></thead><tbody id="byasset"></tbody></table></div></div>
+  </section>
+
+  <section class="card"><h2>Order updates</h2><p class="sub">Newest first, UTC: each decision, fill, expiry and settlement.</p><ol id="feed"></ol></section>
+
+  <section class="card"><h2>All orders</h2><p class="sub">Quoted is the price the bot saw; fill is what the exchange charged. Skipped rows are trades the safety checks refused.</p>
+    <div class="scroll"><table><thead><tr><th>Time (UTC)</th><th>Asset</th><th class="hide-s">Window</th><th>Side</th><th class="n hide-s">Quoted</th><th class="n">Fill</th><th class="n hide-s">Qty</th><th>Status</th><th>Result</th><th class="n">P/L</th><th class="hide-s">Last update</th></tr></thead><tbody id="orders"></tbody></table></div></section>
+</div>
+
+<script>
+"use strict";
+const EMBED = /*EMBED*/null;           // snapshot written by tools/export_dashboard.py --html; null when served live
+const $ = (id) => document.getElementById(id);
+const money = (v) => (v == null ? "—" : (v < 0 ? "−" : "+") + "$" + Math.abs(v).toFixed(3));
+const usd = (v) => (v == null ? "—" : "$" + Number(v).toFixed(2));
+const hms = (iso) => String(iso).slice(11, 19);
+const tone = (v) => (v < 0 ? "bad" : v > 0 ? "ok" : "");
+let state = EMBED, fetchedAt = EMBED ? Date.parse(EMBED.generated) : null;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+function summarize(trades) {
+  const filled = trades.filter((t) => t.status === "Filled");
+  const done = filled.filter((t) => t.result === "Win" || t.result === "Loss");
+  const open = filled.filter((t) => t.result === "Open");
+  const wins = done.filter((t) => t.result === "Win").length;
+  return { filled, done, open, wins, losses: done.length - wins, net: done.reduce((s, t) => s + t.pnl, 0),
+           stake: open.reduce((s, t) => s + (t.cost || 0), 0) };
+}
+
+function render() {
+  if (!state) return;
+  const { trades, account } = state, S = summarize(trades), a = account || {};
+  $("take").replaceChildren("Net ", Object.assign(el("b", tone(S.net), money(S.net))), ` on ${S.done.length} settled orders (${S.wins}–${S.losses} wins to losses), ${S.open.length} still open.`);
+  const run = a.bot === "Running";
+  $("bot").textContent = "Bot " + String(a.bot || "unknown").toLowerCase();
+  $("bot").className = "pill " + (run ? "ok" : "bad");
+  $("asof").textContent = hms(a.updated || state.generated);
+  $("t-net").textContent = money(S.net); $("t-net").className = "v " + tone(S.net);
+  $("t-wr").textContent = S.done.length ? Math.round(100 * S.wins / S.done.length) + "%" : "—";
+  $("t-rec").textContent = `${S.wins}–${S.losses}`;
+  $("t-open").textContent = String(S.open.length);
+  $("t-stake").textContent = usd(S.stake);
+  $("t-bal").textContent = usd(a.balance);
+  const chg = a.balance == null ? null : a.balance - a.start_balance;
+  $("t-chg").textContent = money(chg); $("t-chg").className = tone(chg);
+  $("t-bp").textContent = usd(a.buying_power);
+
+  const halted = String(a.halted || "").split(", ");
+  $("byasset").replaceChildren(...["BTC", "ETH", "SOL", "XRP"].map((asset) => {
+    const f = S.filled.filter((t) => t.asset === asset), d = f.filter((t) => t.result === "Win" || t.result === "Loss");
+    const w = d.filter((t) => t.result === "Win").length, p = d.reduce((s, t) => s + t.pnl, 0), stop = halted.includes(asset);
+    const tr = el("tr");
+    tr.append(el("td", "", asset), el("td", "n", String(f.length)), el("td", "", `${w}–${d.length - w}`),
+              el("td", "n " + tone(p), money(p)), el("td", stop ? "bad" : "ok", stop ? "Stopped after loss" : "Trading"));
+    return tr;
+  }));
+
+  const rows = trades.slice().sort((x, y) => (x.time < y.time ? 1 : -1));
+  const st = { Filled: "", Unfilled: "warn", Skipped: "warn", Error: "bad", "Dry run": "muted" };
+  const rs = { Win: "ok", Loss: "bad", Open: "muted" };
+  $("orders").replaceChildren(...rows.map((r) => {
+    const tr = el("tr"), f2 = (v) => (v == null ? "—" : Number(v).toFixed(2));
+    tr.append(el("td", "", hms(r.time)), el("td", "", r.asset), el("td", "hide-s", r.window), el("td", "", r.side || "—"),
+      el("td", "n hide-s", f2(r.quoted)), el("td", "n", f2(r.fill)), el("td", "n hide-s", r.qty == null ? "—" : Number(r.qty).toFixed(2)),
+      el("td", st[r.status] || "", r.status), el("td", rs[r.result] || "muted", r.result || "—"),
+      el("td", "n " + tone(r.pnl), r.pnl == null ? "—" : money(r.pnl)), el("td", "last hide-s", r.last));
+    return tr;
+  }));
+
+  const feed = [];
+  for (const t of trades) { let ups = []; try { ups = JSON.parse(t.updates); } catch (e) { /* ignore */ } for (const u of ups) feed.push({ t: u.t, asset: t.asset, text: u.text }); }
+  feed.sort((x, y) => (x.t < y.t ? 1 : x.t > y.t ? -1 : 0));
+  $("feed").replaceChildren(...feed.slice(0, 40).map((r) => {
+    const li = el("li"), c = /LOSS|error/i.test(r.text) ? "bad" : /WIN/.test(r.text) ? "ok" : /Skipped|expired/i.test(r.text) ? "warn" : "";
+    li.append(el("span", "muted", hms(r.t)), el("span", "muted", r.asset), el("span", c, r.text));
+    return li;
+  }));
+  drawChart(S.done.slice().sort((x, y) => (x.time < y.time ? -1 : 1)));
+  tickAge();
+}
+
+function drawChart(done) {
+  const box = $("chart"); box.replaceChildren();
+  if (!done.length) { box.textContent = "No settled orders yet."; return; }
+  let cum = 0;
+  const pts = done.map((d) => { cum += d.pnl; return { t: Date.parse(d.time), v: cum, loss: d.result === "Loss", pnl: d.pnl, asset: d.asset }; });
+  const W = Math.max(280, box.clientWidth), H = 240, m = { t: 14, r: 58, b: 26, l: 48 };
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t === t0 ? t0 + 60000 : pts[pts.length - 1].t;
+  const lo = Math.min(0, ...pts.map((p) => p.v)), hi = Math.max(0, ...pts.map((p) => p.v)), pad = Math.max(0.05, (hi - lo) * 0.12);
+  const x = (t) => m.l + (t - t0) / (t1 - t0) * (W - m.l - m.r), y = (v) => H - m.b - (v - (lo - pad)) / (hi - lo + 2 * pad) * (H - m.b - m.t);
+  const NS = "http://www.w3.org/2000/svg", mk = (n, at) => { const e = document.createElementNS(NS, n); for (const k in at) e.setAttribute(k, at[k]); return e; };
+  const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none" });
+  const ticks = [lo, (lo + hi) / 2, hi].map((v) => Math.round(v * 100) / 100);
+  for (const v of ticks) {
+    svg.append(mk("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)" }));
+    const tx = mk("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 });
+    tx.textContent = (v < 0 ? "−" : v > 0 ? "+" : "") + "$" + Math.abs(v).toFixed(2); svg.append(tx);
+  }
+  svg.append(mk("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: "var(--muted)", "stroke-dasharray": "4 3" }));
+  let d = `M${x(pts[0].t)},${y(pts[0].v)}`;
+  for (let i = 1; i < pts.length; i++) d += `H${x(pts[i].t)}V${y(pts[i].v)}`;
+  svg.append(mk("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round" }));
+  pts.forEach((p, i) => svg.append(mk("circle", { cx: x(p.t), cy: y(p.v), r: p.loss || i === pts.length - 1 ? 4 : 2.5, fill: p.loss ? "var(--bad)" : "var(--accent)" })));
+  const last = pts[pts.length - 1], lt = mk("text", { x: Math.min(W - 4, x(last.t) + 8), y: y(last.v) + 4, "text-anchor": x(last.t) + 8 > W - 4 ? "end" : "start", fill: "var(--muted)", "font-size": 11 });
+  lt.textContent = (last.v < 0 ? "−" : "+") + "$" + Math.abs(last.v).toFixed(2); svg.append(lt);
+  for (const ms of [t0, t1]) { const tx = mk("text", { x: x(ms), y: H - 8, "text-anchor": ms === t0 ? "start" : "end", fill: "var(--muted)", "font-size": 11 }); tx.textContent = new Date(ms).toISOString().slice(11, 16); svg.append(tx); }
+  const tip = el("div", "tip"); tip.style.display = "none";
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    const p = pts.reduce((a, b) => (Math.abs(x(b.t) - px) < Math.abs(x(a.t) - px) ? b : a));
+    tip.textContent = `${new Date(p.t).toISOString().slice(11, 19)} ${p.asset}: ${money(p.pnl)}, total ${money(p.v)}`;
+    tip.style.display = "block"; tip.style.left = Math.max(0, Math.min(r.width - 220, x(p.t) / W * r.width + 10)) + "px"; tip.style.top = Math.max(0, y(p.v) / H * r.height - 34) + "px";
+  });
+  svg.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  box.append(svg, tip);
+}
+
+function tickAge() {
+  const t = state && state.account && state.account.updated ? Date.parse(state.account.updated) : fetchedAt;
+  if (!t) return;
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  $("age").textContent = m < 1 ? "under a minute" : m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min";
+  $("age").className = m > 20 ? "warn" : "";
+}
+
+async function refresh() {
+  const btn = $("refresh"); btn.disabled = true; $("msg").textContent = "Refreshing…"; $("msg").className = "msg muted";
+  try {
+    const r = await fetch("api/data", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    state = await r.json(); fetchedAt = Date.now(); render();
+    $("msg").textContent = state.account && state.account.error ? "Orders refreshed; account balance unavailable: " + state.account.error : "Refreshed " + new Date().toISOString().slice(11, 19) + " UTC";
+    $("msg").className = "msg " + (state.account && state.account.error ? "warn" : "ok");
+  } catch (e) {
+    $("msg").textContent = EMBED ? "Can't reach a live server, so this is the saved snapshot. Run: python tools/dashboard_server.py, then open http://localhost:8765" : "Refresh failed: " + e.message;
+    $("msg").className = "msg warn";
+  } finally { btn.disabled = false; }
+}
+
+let timer = null;
+$("refresh").addEventListener("click", refresh);
+$("auto").addEventListener("change", (ev) => { clearInterval(timer); if (ev.target.checked) { refresh(); timer = setInterval(refresh, 15000); } });
+window.addEventListener("resize", () => { if (state) render(); });
+setInterval(tickAge, 30000);
+if (EMBED) render(); else refresh();
+</script>
+</body>
+</html>
