@@ -176,3 +176,22 @@ def test_exchange_price_to_beat_replaces_the_reconstruction(tmp_path):
     b.ptb[("btc", start)] = 102.9              # the exchange says the price to beat was 102.9, nearly where price is
     exch = b.margin_view("btc", start, now)
     assert exch["exact"] is True and abs(exch["z"]) < abs(recon["z"])
+
+
+def test_loss_budget_stops_everything_when_spent_and_does_not_halt_assets(tmp_path, monkeypatch):
+    b = _bot(tmp_path, {}, 0.0)
+    b.a.loss_budget = 0.15
+    b.stats = {a: [0, 0, 0.0] for a in ("btc", "eth")}
+    b.a.assets = ["btc", "eth"]
+    monkeypatch.setattr(late, "settle_result", lambda http, ev: "Down")           # both of our Up trades lose
+    def trade(slug):
+        return {"slug": slug, "ev": "x", "end": 0, "side": "Up", "ask": 0.97, "qty": 0.10, "fee": 0.0, "next_check": 0}
+    b.pending = {"btc": trade("cpc-btc-updown-5m-2026-10-29-1900z")}
+    b.settle(1e12)                                                                  # loses 0.097
+    assert b.budget_pnl == pytest.approx(-0.097) and not b.stop_all and not b.halted
+    b.pending = {"eth": trade("cpceth-eth-updown-5m-2026-10-29-1900z")}
+    b.settle(1e12)                                                                  # loses another 0.097 -> -0.194 <= -0.15
+    assert b.stop_all and not b.halted                                              # budget replaced the per-asset halt
+
+
+import pytest  # noqa: E402  (used by the budget test above)

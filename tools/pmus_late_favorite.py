@@ -130,6 +130,7 @@ class Bot:
         self.stats = {a: [0, 0, 0.0] for a in args.assets}  # wins, losses, pnl
         self.spent, self.n_live = 0.0, 0
         self._hb = 0.0
+        self.budget_pnl = 0.0                              # realized P&L since the loss budget started (saved across restarts)
         self.stop_all = False                              # set by the first loss when --stop-on-any-loss
         self.load_state()
 
@@ -138,6 +139,7 @@ class Bot:
             return
         d = json.loads(STATE.read_text())
         self.pending, self.halted, self.stop_all = d["pending"], d["halted"], d["stop_all"]
+        self.budget_pnl = d.get("budget_pnl", 0.0)
         self.stats.update({k: v for k, v in d["stats"].items() if k in self.stats})
         self.done = set(d.get("done", []))
         self.spent, self.n_live = d.get("spent", 0.0), d.get("n_live", 0)
@@ -147,7 +149,8 @@ class Bot:
     def save_state(self) -> None:
         STATE.write_text(json.dumps({"pending": self.pending, "halted": self.halted, "stop_all": self.stop_all,
                                      "stats": self.stats, "done": sorted(self.done)[-40:],
-                                     "spent": self.spent, "n_live": self.n_live}))
+                                     "spent": self.spent, "n_live": self.n_live,
+                                     "budget_pnl": self.budget_pnl}))
 
     def emit(self, rec: dict) -> None:
         self.log.write(json.dumps(rec, default=str) + "\n")
@@ -181,7 +184,14 @@ class Bot:
             st[2] += p
             self.say(f"SETTLED {asset} {t['slug'][-6:]} bought {t['side']} -> {res}: "
                      f"{'WIN' if won else 'LOSS'} {p:+.3f}")
-            if not won:
+            budget = getattr(self.a, "loss_budget", None)
+            if budget is not None:     # a loss budget replaces the per-asset halt: stop everything once the budget is spent
+                self.budget_pnl += p
+                self.say(f"  loss budget: {self.budget_pnl:+.3f} of -{budget:.2f}")
+                if self.budget_pnl <= -budget:
+                    self.stop_all = True
+                    self.say(f"LOSS BUDGET SPENT ({self.budget_pnl:+.3f}) -> stopping all trading")
+            if not won and budget is None:
                 self.halted[asset] = "lost; stopped betting this asset"
                 self.say(f"{asset} HALTED after loss")
                 if self.a.stop_on_any_loss:
@@ -440,6 +450,9 @@ def main() -> None:
     ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0)
     ap.add_argument("--stop-on-any-loss", action="store_true", help="stop all assets after the first loss")
+    ap.add_argument("--loss-budget", type=float, default=None,
+                    help="stop everything once realized P&L since the budget started reaches -this many dollars "
+                         "(replaces the per-asset halt after a loss; the running total is kept in the state file)")
     ap.add_argument("--fresh", action="store_true", help="ignore saved state (data/pmus/state.json)")
     ap.add_argument("--slip", type=float, default=0.01, help="limit this far through the touch (fills at book price)")
     args = ap.parse_args()
