@@ -15,6 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Polymarket US trading (tools/pmus_test_trade.py)
+us = ["cryptography>=42", "python-dotenv"]
 # NBA situational trends over the closing-line history (pm_edges trends)
 history = ["pandas>=2", "lxml", "numpy"]
 # walk-forward models (tools/run_model.py)
