@@ -25,8 +25,18 @@ def taker_fee(price: float, qty: float, theta: float = FEE_THETA) -> float:
     return theta * qty * price * (1 - price)
 
 
+def _stamp(start_ts: int) -> str:
+    return dt.datetime.fromtimestamp(start_ts, dt.UTC).strftime("%Y-%m-%d-%H%Mz")
+
+
 def updown_slug(start_ts: int, asset: str = "btc", horizon: str = "5m") -> str:
-    return f"cpc-{asset}-updown-{horizon}-{dt.datetime.fromtimestamp(start_ts, dt.UTC):%Y-%m-%d-%H%Mz}"
+    """Market slug. BTC is `cpc-btc-...`; the other assets are `cpc<asset>-<asset>-...`."""
+    prefix = "cpc-btc" if asset == "btc" else f"cpc{asset}-{asset}"
+    return f"{prefix}-updown-{horizon}-{_stamp(start_ts)}"
+
+
+def event_slug(start_ts: int, asset: str = "btc", horizon: str = "5m") -> str:
+    return f"{asset}-updown-{horizon}-{_stamp(start_ts)}"
 
 
 @dataclass(frozen=True)

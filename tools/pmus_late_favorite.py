@@ -1,14 +1,19 @@
-"""Late-window favorite buyer for Polymarket US BTC 5-minute Up/Down markets.
+"""Late-window favorite buyer for Polymarket US 5-minute crypto Up/Down markets (BTC, ETH, SOL, XRP).
 
 Recreates what wallet 0x50f7 does on polymarket.com: in the last ~2 minutes of a window, buy
-whichever side is already priced 0.95-0.99, hold to settlement, repeat. Per $1 that wins you earn a
-cent or two; one reversal loses the stake, so it only pays if the favorite loses less often than
-roughly (1 - ask) / 1. A 7-day backtest on polymarket.com could not tell that apart from break-even.
+whichever side is already priced 0.95-0.99, hold to settlement, repeat. Per $1 that wins you a cent
+or two; one reversal loses the stake, so it only pays if the favorite loses less often than roughly
+(1 - ask). A 7-day backtest on polymarket.com could not tell that apart from break-even.
 
-DRY RUN BY DEFAULT (logs what it would buy). `--live` sends fill-or-kill orders with real money.
+Each asset has its own $1 stake and a kill switch: after a LOSS on an asset it stops trading that
+asset for the rest of the session. A trade that cannot be confirmed (order unreadable, never
+settles) also halts its asset. Maximum loss is therefore about --usd per asset.
 
-    python tools/pmus_late_favorite.py                       # watch + log decisions
-    python tools/pmus_late_favorite.py --live --usd 1 --max-spend 5 --max-trades 5
+Prices come from the authenticated markets WebSocket (the public REST gateway allows only ~5
+requests per 10 s). DRY RUN BY DEFAULT; `--live` sends real fill-or-kill orders.
+
+    python tools/pmus_late_favorite.py                              # watch + log decisions
+    python tools/pmus_late_favorite.py --live --usd 1               # BTC, ETH, SOL, XRP at $1 each
 
 Price convention (docs): `price.value` is always the Up/long price. Buying Down at X is a
 BUY_SHORT with price.value = 1 - X, i.e. hitting the best long bid.
@@ -16,6 +21,7 @@ BUY_SHORT with price.value = 1 - X, i.e. hitting the best long bid.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import math
 import os
@@ -25,19 +31,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+import websockets
 
-from pm_edges.pmus import GATEWAY, Signer, Trader, get_book, limit_order, taker_fee, updown_slug
+from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
 FOK = "TIME_IN_FORCE_FILL_OR_KILL"
+WS_PATH = "/v1/ws/markets"
 
 
 def ts() -> str:
     return datetime.now(timezone.utc).strftime("%H:%M:%S")
 
 
-def pick(book, lo: float, hi: float):
-    """Return (side, ask, depth, price_value, intent) for the favorite if it is priced in [lo, hi]."""
+def pick(book: Book, lo: float, hi: float):
+    """(side, ask, depth, price_value, intent) for the favorite if it is priced in [lo, hi]."""
     if not book.bids or not book.offers:
         return None
     up_ask, up_depth = book.offers[0]
@@ -50,10 +58,15 @@ def pick(book, lo: float, hi: float):
     return None
 
 
-def settle_result(http: httpx.Client, slug: str):
-    """'Up'/'Down' once the market has resolved, else None."""
-    ev = slug.removeprefix("cpc-")
-    r = http.get(f"{GATEWAY}/v1/events/slug/{ev}")
+def book_from_ws(md: dict) -> Book:
+    lv = lambda rows: [(float(x["px"]["value"]), float(x["qty"])) for x in rows]  # noqa: E731
+    return Book(md["marketSlug"], md.get("state", ""), sorted(lv(md.get("bids", [])), reverse=True),
+                sorted(lv(md.get("offers", []))))
+
+
+def settle_result(http: httpx.Client, ev_slug: str):
+    """'Up'/'Down' once resolved; None if not yet (or rate limited)."""
+    r = http.get(f"{GATEWAY}/v1/events/slug/{ev_slug}")
     if r.status_code != 200:
         return None
     m = r.json().get("event", r.json())["markets"][0]
@@ -66,20 +79,164 @@ def settle_result(http: httpx.Client, slug: str):
     return "Up" if yes > no else "Down" if no > yes else None
 
 
+class Bot:
+    def __init__(self, args, trader: Trader | None, http: httpx.Client, log) -> None:
+        self.a, self.trader, self.http, self.log = args, trader, http, log
+        self.books: dict[str, Book] = {}
+        self.halted: dict[str, str] = {}                   # asset -> reason
+        self.done: set[str] = set()                        # market slugs already decided
+        self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
+        self.stats = {a: [0, 0, 0.0] for a in args.assets}  # wins, losses, pnl
+        self.spent, self.n_live = 0.0, 0
+
+    def emit(self, rec: dict) -> None:
+        self.log.write(json.dumps(rec, default=str) + "\n")
+        self.log.flush()
+
+    def say(self, msg: str) -> None:
+        print(f"[{ts()}] {msg}", flush=True)
+
+    def summary(self) -> str:
+        return " | ".join(f"{a} {w}W/{l}L {p:+.3f}" + (" HALTED" if a in self.halted else "")
+                          for a, (w, l, p) in self.stats.items())
+
+    # -- settlement ----------------------------------------------------------
+    def settle(self, now: float) -> None:
+        for asset, t in list(self.pending.items()):
+            if now < t["next_check"]:
+                continue
+            t["next_check"] = now + 15
+            res = settle_result(self.http, t["ev"])
+            if res is None:
+                if now > t["end"] + 900:
+                    self.halted[asset] = "never settled; check the app"
+                    self.say(f"{asset} {t['slug'][-6:]} unresolved after 15 min -> HALTED; check the app")
+                    del self.pending[asset]
+                continue
+            won = res == t["side"]
+            p = t["qty"] * (1 - t["ask"]) - t["fee"] if won else -(t["qty"] * t["ask"]) - t["fee"]
+            st = self.stats[asset]
+            st[0] += won
+            st[1] += not won
+            st[2] += p
+            self.say(f"SETTLED {asset} {t['slug'][-6:]} bought {t['side']} -> {res}: "
+                     f"{'WIN' if won else 'LOSS'} {p:+.3f}")
+            if not won:
+                self.halted[asset] = "lost; stopped betting this asset"
+                self.say(f"{asset} HALTED after loss")
+            self.emit({"settled": t["slug"], "asset": asset, "result": res, "won": won, "pnl": round(p, 4)})
+            self.say("  " + self.summary())
+            del self.pending[asset]
+
+    # -- decisions -----------------------------------------------------------
+    async def consider(self, asset: str, start: int, now: float) -> None:
+        slug = updown_slug(start, asset)
+        left = start + 300 - now
+        if (slug in self.done or asset in self.halted or asset in self.pending
+                or not self.a.t_min <= left <= self.a.t_max):
+            return
+        book = self.books.get(slug)
+        c = pick(book, self.a.min_ask, self.a.max_ask) if book and book.state == "MARKET_STATE_OPEN" else None
+        if not c:
+            return
+        side, ask, depth, pv, intent = c
+        qty = math.floor(self.a.usd / ask * 100) / 100
+        self.done.add(slug)
+        if qty < 0.01 or qty > depth:
+            self.say(f"{asset} {slug[-6:]} {side} @ {ask:.2f}: size {qty} vs depth {depth}; skip")
+            return
+        fee = taker_fee(ask, qty)
+        self.say(f"{asset} {slug[-6:]} T-{left:.0f}s favorite {side} @ {ask:.2f} -> BUY {qty} "
+                 f"(${qty * ask:.2f}) {'LIVE' if self.a.live else 'dry'}")
+        rec = {"asset": asset, "slug": slug, "t": round(now), "left": round(left), "side": side, "ask": ask,
+               "qty": qty, "live": self.a.live, "bid": book.bids[0], "offer": book.offers[0]}
+        trade = {"slug": slug, "ev": event_slug(start, asset), "end": start + 300, "side": side, "ask": ask,
+                 "qty": qty, "fee": fee, "next_check": start + 300 + 20}
+        if self.a.live:
+            if self.n_live >= self.a.max_trades or self.spent + self.a.usd > self.a.max_spend:
+                self.say("  live caps reached; not trading")
+                return
+            lim = min(0.99, pv + self.a.slip) if intent.endswith("LONG") else max(0.01, pv - self.a.slip)
+            loop = asyncio.get_running_loop()
+            try:
+                res = await loop.run_in_executor(None, self.trader.create,
+                                                 limit_order(slug, intent, round(lim, 2), qty, FOK))
+                o = await loop.run_in_executor(None, self.trader.order_outcome, res["id"])
+            except Exception as e:  # the order may or may not exist: stop this asset, log loudly
+                rec["error"] = str(e)
+                self.halted[asset] = "unconfirmed order; check the app"
+                self.say(f"  {asset} ORDER ERROR (asset HALTED): {e}")
+                self.emit(rec)
+                return
+            rec["order"] = o
+            got = float(o.get("cumQuantity") or 0)
+            px = float((o.get("avgPx") or {}).get("value") or ask)
+            comm = float((o.get("commissionNotionalTotalCollected") or {}).get("value") or 0)
+            self.say(f"  order {res.get('id')} state={o.get('state')} filled {got} of {qty} @ {px:.4f} fee {comm:.4f}")
+            if got > 0:
+                self.spent += got * px
+                self.n_live += 1
+                trade.update(ask=px, qty=got, fee=comm)
+                self.pending[asset] = trade
+        else:
+            self.pending[asset] = trade
+        self.emit(rec)
+
+    # -- stream --------------------------------------------------------------
+    async def run(self) -> None:
+        stop_at = time.time() + self.a.hours * 3600
+        subscribed: set[int] = set()
+        while time.time() < stop_at:
+            try:
+                async with websockets.connect("wss://api.polymarket.us" + WS_PATH,
+                                              additional_headers=self.trader_signer.headers("GET", WS_PATH)) as ws:
+                    subscribed.clear()
+                    self.say("websocket connected")
+                    while time.time() < stop_at:
+                        now = time.time()
+                        start = int(now // 300) * 300
+                        if start not in subscribed:  # new window: subscribe to its four markets
+                            subscribed.add(start)
+                            await ws.send(json.dumps({"subscribe": {
+                                "requestId": f"w{start}", "subscriptionType": "SUBSCRIPTION_TYPE_MARKET_DATA",
+                                "marketSlugs": [updown_slug(start, x) for x in self.a.assets]}}))
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), 1.0)
+                            md = json.loads(raw).get("marketData")
+                            if md:
+                                self.books[md["marketSlug"]] = book_from_ws(md)
+                        except asyncio.TimeoutError:
+                            pass
+                        now = time.time()
+                        for asset in self.a.assets:
+                            await self.consider(asset, start, now)
+                        self.settle(now)
+                        if self.a.live and not self.pending and (
+                                len(self.halted) == len(self.a.assets)
+                                or self.n_live >= self.a.max_trades):
+                            self.say("all assets halted or caps reached; done. " + self.summary())
+                            return
+            except (websockets.ConnectionClosed, OSError) as e:
+                self.say(f"websocket dropped ({e}); reconnecting in 3s")
+                await asyncio.sleep(3)
+        self.say("finished. " + self.summary())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--live", action="store_true", help="send real orders (default: dry run)")
+    ap.add_argument("--assets", default="btc,eth,sol,xrp")
     ap.add_argument("--usd", type=float, default=1.0, help="stake per trade (max 5)")
     ap.add_argument("--min-ask", type=float, default=0.95)
     ap.add_argument("--max-ask", type=float, default=0.99)
     ap.add_argument("--t-max", type=float, default=120.0, help="start looking this many seconds before the end")
     ap.add_argument("--t-min", type=float, default=25.0, help="stop looking this many seconds before the end")
-    ap.add_argument("--max-trades", type=int, default=5, help="live: stop after this many orders")
-    ap.add_argument("--max-spend", type=float, default=5.0, help="live: stop after this much total stake")
-    ap.add_argument("--hours", type=float, default=2.0, help="stop after this long")
-    ap.add_argument("--poll", type=float, default=1.5)
-    ap.add_argument("--slip", type=float, default=0.01, help="limit this far through the touch (fills still at the book price)")
+    ap.add_argument("--max-trades", type=int, default=60, help="live: stop after this many filled orders")
+    ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
+    ap.add_argument("--hours", type=float, default=2.0)
+    ap.add_argument("--slip", type=float, default=0.01, help="limit this far through the touch (fills at book price)")
     args = ap.parse_args()
+    args.assets = [x.strip().lower() for x in args.assets.split(",") if x.strip()]
     if not 0 < args.usd <= 5:
         sys.exit("--usd must be in (0, 5]")
 
@@ -89,96 +246,17 @@ def main() -> None:
     except ImportError:
         pass
     kid, sec = os.environ.get("POLYMARKET_KEY_ID"), os.environ.get("POLYMARKET_SECRET_KEY")
-    trader = Trader(Signer(kid, sec)) if kid and sec else None
-    if args.live and trader is None:
-        sys.exit("--live needs POLYMARKET_KEY_ID and POLYMARKET_SECRET_KEY")
-
+    if not (kid and sec):
+        sys.exit("needs POLYMARKET_KEY_ID and POLYMARKET_SECRET_KEY (the market stream is authenticated)")
+    signer = Signer(kid, sec)
     LOG.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[{ts()}] late-favorite ({'LIVE' if args.live else 'dry-run'}) ask {args.min_ask}-{args.max_ask} "
-          f"T-{args.t_max:g}..{args.t_min:g}s ${args.usd}/trade cap ${args.max_spend} / {args.max_trades} trades", flush=True)
-    done: set[str] = set()
-    pending: list[dict] = []   # trades awaiting settlement
-    spent, n_live, stop_at = 0.0, 0, time.time() + args.hours * 3600
-    wins = losses = 0
-    pnl = 0.0
-
+    print(f"[{ts()}] late-favorite ({'LIVE' if args.live else 'dry-run'}) {','.join(args.assets)} "
+          f"ask {args.min_ask}-{args.max_ask} T-{args.t_max:g}..{args.t_min:g}s ${args.usd}/trade/asset, "
+          f"stop asset on loss", flush=True)
     with httpx.Client(timeout=15.0) as http, LOG.open("a") as log:
-        def emit(rec: dict) -> None:
-            log.write(json.dumps(rec, default=str) + "\n")
-            log.flush()
-
-        while time.time() < stop_at:
-            now = time.time()
-            start = int(now // 300) * 300
-            slug, left = updown_slug(start), start + 300 - now
-
-            # settle finished trades
-            for t in list(pending):
-                if now > t["end"] + 20:
-                    res = settle_result(http, t["slug"])
-                    if res is None:
-                        if now > t["end"] + 600:
-                            print(f"[{ts()}] {t['slug'][-6:]} still unresolved after 10 min; check the app", flush=True)
-                            pending.remove(t)
-                        continue
-                    won = res == t["side"]
-                    p = t["qty"] * (1 - t["ask"]) - t["fee"] if won else -(t["qty"] * t["ask"]) - t["fee"]
-                    pnl += p
-                    wins += won
-                    losses += not won
-                    print(f"[{ts()}] SETTLED {t['slug'][-6:]} bought {t['side']} -> {res}: {'WIN' if won else 'LOSS'} "
-                          f"{p:+.3f}  | session {wins}W/{losses}L {pnl:+.3f}", flush=True)
-                    emit({"settled": t["slug"], "result": res, "won": won, "pnl": round(p, 4)})
-                    pending.remove(t)
-
-            if args.live and (n_live >= args.max_trades or spent + args.usd > args.max_spend) and not pending:
-                print(f"[{ts()}] live caps reached, done. session {wins}W/{losses}L {pnl:+.3f}", flush=True)
-                return
-
-            if slug not in done and args.t_min <= left <= args.t_max:
-                try:
-                    book = get_book(http, slug)
-                except httpx.HTTPError as e:
-                    print(f"[{ts()}] book error {e}", flush=True)
-                    time.sleep(5)
-                    continue
-                c = pick(book, args.min_ask, args.max_ask) if book and book.open else None
-                if c:
-                    side, ask, depth, pv, intent = c
-                    qty = math.floor(args.usd / ask * 100) / 100
-                    fee = taker_fee(ask, qty)
-                    if qty < 0.01 or qty > depth:
-                        print(f"[{ts()}] {slug[-6:]} {side} {ask:.2f}: size {qty} vs depth {depth}; skip", flush=True)
-                        done.add(slug)
-                    else:
-                        print(f"[{ts()}] {slug[-6:]} T-{left:.0f}s favorite {side} @ {ask:.2f} "
-                              f"-> BUY {qty} (${qty * ask:.2f}, fee~${fee:.3f}) {'LIVE' if args.live else 'dry'}", flush=True)
-                        rec = {"slug": slug, "t": round(now), "left": round(left), "side": side, "ask": ask, "qty": qty,
-                               "fee": round(fee, 4), "live": args.live, "book_bid": book.bids[0], "book_offer": book.offers[0]}
-                        done.add(slug)
-                        if args.live:
-                            try:
-                                lim = min(0.99, pv + args.slip) if intent.endswith("LONG") else max(0.01, pv - args.slip)
-                                res = trader.create(limit_order(slug, intent, round(lim, 2), qty, FOK))
-                                o = trader.order_outcome(res["id"])
-                                rec["result"], rec["order"] = res, o
-                                got = float(o.get("cumQuantity") or 0)
-                                px = float((o.get("avgPx") or {}).get("value") or ask)
-                                comm = float((o.get("commissionNotionalTotalCollected") or {}).get("value") or 0)
-                                print(f"[{ts()}]   order {res.get('id')} state={o.get('state')} filled {got} of {qty} "
-                                      f"@ {px:.4f} fee {comm:.4f}", flush=True)
-                                if got > 0:
-                                    spent += got * px
-                                    n_live += 1
-                                    pending.append({"slug": slug, "end": start + 300, "side": side, "ask": px, "qty": got, "fee": comm})
-                            except Exception as e:  # keep running; the order may or may not exist, so log it loudly
-                                rec["error"] = str(e)
-                                print(f"[{ts()}]   ORDER ERROR: {e}", flush=True)
-                        else:
-                            pending.append({"slug": slug, "end": start + 300, "side": side, "ask": ask, "qty": qty, "fee": fee})
-                        emit(rec)
-            time.sleep(args.poll)
-    print(f"[{ts()}] finished. session {wins}W/{losses}L {pnl:+.3f}", flush=True)
+        bot = Bot(args, Trader(signer, http) if args.live else None, http, log)
+        bot.trader_signer = signer
+        asyncio.run(bot.run())
 
 
 if __name__ == "__main__":

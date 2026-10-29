@@ -72,3 +72,10 @@ def test_order_outcome_retries_404_then_raises(monkeypatch):
     import pytest
     with pytest.raises(RuntimeError, match="not readable"):
         t.order_outcome("x", tries=2)
+
+
+def test_slugs_per_asset():
+    from pm_edges.pmus import event_slug
+    assert updown_slug(1793294700, "eth") == "cpceth-eth-updown-5m-2026-10-29-1725z"
+    assert updown_slug(1793294700, "xrp") == "cpcxrp-xrp-updown-5m-2026-10-29-1725z"
+    assert event_slug(1793294700, "sol") == "sol-updown-5m-2026-10-29-1725z"
