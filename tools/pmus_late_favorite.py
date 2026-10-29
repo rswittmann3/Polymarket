@@ -36,6 +36,7 @@ import websockets
 from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
+STATE = Path("data/pmus/state.json")  # survives restarts: open trades, per-asset stats, stop flag
 FOK = "TIME_IN_FORCE_FILL_OR_KILL"
 WS_PATH = "/v1/ws/markets"
 
@@ -88,6 +89,24 @@ class Bot:
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
         self.stats = {a: [0, 0, 0.0] for a in args.assets}  # wins, losses, pnl
         self.spent, self.n_live = 0.0, 0
+        self.stop_all = False                              # set by the first loss when --stop-on-any-loss
+        self.load_state()
+
+    def load_state(self) -> None:
+        if self.a.fresh or not STATE.exists():
+            return
+        d = json.loads(STATE.read_text())
+        self.pending, self.halted, self.stop_all = d["pending"], d["halted"], d["stop_all"]
+        self.stats.update({k: v for k, v in d["stats"].items() if k in self.stats})
+        self.done = set(d.get("done", []))
+        self.spent, self.n_live = d.get("spent", 0.0), d.get("n_live", 0)
+        if self.pending or self.halted or self.stop_all:
+            self.say(f"resumed state: pending {list(self.pending)} halted {self.halted} stop_all={self.stop_all}")
+
+    def save_state(self) -> None:
+        STATE.write_text(json.dumps({"pending": self.pending, "halted": self.halted, "stop_all": self.stop_all,
+                                     "stats": self.stats, "done": sorted(self.done)[-40:],
+                                     "spent": self.spent, "n_live": self.n_live}))
 
     def emit(self, rec: dict) -> None:
         self.log.write(json.dumps(rec, default=str) + "\n")
@@ -124,15 +143,19 @@ class Bot:
             if not won:
                 self.halted[asset] = "lost; stopped betting this asset"
                 self.say(f"{asset} HALTED after loss")
+                if self.a.stop_on_any_loss:
+                    self.stop_all = True
+                    self.say("LOSS -> stopping all trading (--stop-on-any-loss)")
             self.emit({"settled": t["slug"], "asset": asset, "result": res, "won": won, "pnl": round(p, 4)})
             self.say("  " + self.summary())
             del self.pending[asset]
+            self.save_state()
 
     # -- decisions -----------------------------------------------------------
     async def consider(self, asset: str, start: int, now: float) -> None:
         slug = updown_slug(start, asset)
         left = start + 300 - now
-        if (slug in self.done or asset in self.halted or asset in self.pending
+        if (self.stop_all or slug in self.done or asset in self.halted or asset in self.pending
                 or not self.a.t_min <= left <= self.a.t_max):
             return
         book = self.books.get(slug)
@@ -142,6 +165,7 @@ class Bot:
         side, ask, depth, pv, intent = c
         qty = math.floor(self.a.usd / ask * 100) / 100
         self.done.add(slug)
+        self.save_state()
         if qty < 0.01 or qty > depth:
             self.say(f"{asset} {slug[-6:]} {side} @ {ask:.2f}: size {qty} vs depth {depth}; skip")
             return
@@ -182,6 +206,7 @@ class Bot:
                 self.pending[asset] = trade
         else:
             self.pending[asset] = trade
+        self.save_state()
         self.emit(rec)
 
     # -- stream --------------------------------------------------------------
@@ -214,7 +239,8 @@ class Bot:
                             await self.consider(asset, start, now)
                         self.settle(now)
                         if self.a.live and not self.pending and (
-                                len(self.halted) == len(self.a.assets)
+                                self.stop_all
+                                or len(self.halted) == len(self.a.assets)
                                 or self.n_live >= self.a.max_trades):
                             self.say("all assets halted or caps reached; done. " + self.summary())
                             return
@@ -236,6 +262,8 @@ def main() -> None:
     ap.add_argument("--max-trades", type=int, default=60, help="live: stop after this many filled orders")
     ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0)
+    ap.add_argument("--stop-on-any-loss", action="store_true", help="stop all assets after the first loss")
+    ap.add_argument("--fresh", action="store_true", help="ignore saved state (data/pmus/state.json)")
     ap.add_argument("--slip", type=float, default=0.01, help="limit this far through the touch (fills at book price)")
     args = ap.parse_args()
     args.assets = [x.strip().lower() for x in args.assets.split(",") if x.strip()]
