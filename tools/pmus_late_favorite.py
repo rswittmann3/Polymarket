@@ -36,6 +36,7 @@ import websockets
 from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
+HEARTBEAT = Path("data/pmus/heartbeat")  # the dashboard reads this to show "Bot running" on any OS
 STATE = Path("data/pmus/state.json")  # survives restarts: open trades, per-asset stats, stop flag
 FOK = "TIME_IN_FORCE_FILL_OR_KILL"
 WS_PATH = "/v1/ws/markets"
@@ -119,6 +120,7 @@ class Bot:
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
         self.stats = {a: [0, 0, 0.0] for a in args.assets}  # wins, losses, pnl
         self.spent, self.n_live = 0.0, 0
+        self._hb = 0.0
         self.stop_all = False                              # set by the first loss when --stop-on-any-loss
         self.load_state()
 
@@ -284,6 +286,9 @@ class Bot:
                         for asset in self.a.assets:
                             await self.consider(asset, start, now)
                         self.settle(now)
+                        if now - self._hb > 5:
+                            HEARTBEAT.write_text(str(now))
+                            self._hb = now
                         if self.a.live and not self.pending and (
                                 self.stop_all
                                 or len(self.halted) == len(self.a.assets)

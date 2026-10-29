@@ -168,7 +168,17 @@ def build_trades(records: list[dict]) -> list[dict]:
 
 
 def bot_running() -> bool:
-    ps = subprocess.run(["ps", "aux"], capture_output=True, text=True).stdout
+    """Heartbeat file first (works on any OS); `ps` as a fallback for a bot started before heartbeats existed."""
+    hb = Path("data/pmus/heartbeat")
+    try:
+        if hb.exists() and time_now() - float(hb.read_text()) < 90:
+            return True
+    except ValueError:
+        pass
+    try:
+        ps = subprocess.run(["ps", "aux"], capture_output=True, text=True).stdout
+    except (FileNotFoundError, OSError):
+        return False
     return any("pmus_late_favorite" in ln and "python" in ln and "export_dashboard" not in ln for ln in ps.splitlines())
 
 
