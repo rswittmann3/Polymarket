@@ -225,8 +225,11 @@ async function refresh() {
     $("msg").textContent = state.account && state.account.error ? "Orders refreshed; account balance unavailable: " + state.account.error : "Refreshed " + new Date().toISOString().slice(11, 19) + " UTC";
     $("msg").className = "msg " + (state.account && state.account.error ? "warn" : "ok");
   } catch (e) {
-    $("msg").textContent = EMBED ? "Can't reach a live server, so this is the saved snapshot. Run: python tools/dashboard_server.py, then open http://localhost:8765" : "Refresh failed: " + e.message;
-    $("msg").className = "msg warn";
+    if (EMBED) {   // opened as a plain file: re-read the file itself, which a background job keeps rewriting
+      $("msg").textContent = "No live server here, so reloading the file for its newest snapshot. If the time above does not change, the file has not been re-read: reopen it.";
+      $("msg").className = "msg warn";
+      setTimeout(() => location.reload(), 700);
+    } else { $("msg").textContent = "Refresh failed: " + e.message; $("msg").className = "msg warn"; }
   } finally { btn.disabled = false; }
 }
 

@@ -204,9 +204,20 @@ def render_html(snap: dict | None = None) -> str:
 
 def main() -> None:
     if len(sys.argv) >= 3 and sys.argv[1] == "--html":
-        Path(sys.argv[2]).write_text(render_html(snapshot()))
-        print("wrote", sys.argv[2])
-        return
+        every = float(sys.argv[sys.argv.index("--every") + 1]) if "--every" in sys.argv else 0
+        out = Path(sys.argv[2])
+        while True:
+            try:
+                tmp = out.with_suffix(".tmp")
+                tmp.write_text(render_html(snapshot()))
+                tmp.replace(out)                      # atomic: a reader never sees half a file
+                print("wrote", out, iso(time_now()), flush=True)
+            except Exception as e:                    # keep the loop alive through a network blip
+                print("export failed:", e, flush=True)
+            if not every:
+                return
+            import time
+            time.sleep(every)
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     trades = build_trades(load_records())
