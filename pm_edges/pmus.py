@@ -87,6 +87,18 @@ class Trader:
     def create(self, order: dict) -> dict:
         return self._call("POST", "/v1/orders", order)
 
+    def order_outcome(self, order_id: str, tries: int = 8) -> dict:
+        """Read the order back until it leaves NEW/PENDING_NEW. The create response is a snapshot taken
+        before matching: its `executions` hold a bare NEW acknowledgement even for an order that never
+        fills, so fill status must come from `cumQuantity`, never from `executions` being non-empty."""
+        o: dict = {}
+        for _ in range(tries):
+            o = self._call("GET", f"/v1/order/{order_id}")["order"]
+            if o.get("state") not in ("ORDER_STATE_NEW", "ORDER_STATE_PENDING_NEW"):
+                break
+            time.sleep(0.4)
+        return o
+
     def close_position(self, slug: str) -> dict:
         return self._call("POST", "/v1/order/close-position", {"marketSlug": slug})
 

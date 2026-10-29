@@ -43,3 +43,13 @@ def test_preview_wraps_order_in_request(monkeypatch):
     monkeypatch.setattr(t, "_call", lambda m, p, b=None: seen.update(m=m, p=p, b=b) or {})
     t.preview({"marketSlug": "x"})
     assert seen["p"] == "/v1/order/preview" and seen["b"] == {"request": {"marketSlug": "x"}}
+
+
+def test_order_outcome_trusts_cum_quantity_not_executions(monkeypatch):
+    from pm_edges.pmus import Trader
+    t = Trader(Signer("k", base64.b64encode(bytes(64)).decode()))
+    states = iter([{"order": {"state": "ORDER_STATE_NEW", "cumQuantity": 0}},
+                   {"order": {"state": "ORDER_STATE_EXPIRED", "cumQuantity": 0}}])
+    monkeypatch.setattr(t, "_call", lambda m, p, b=None: next(states))
+    monkeypatch.setattr("pm_edges.pmus.time.sleep", lambda s: None)
+    assert t.order_outcome("x")["state"] == "ORDER_STATE_EXPIRED"

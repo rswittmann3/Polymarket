@@ -78,6 +78,7 @@ def main() -> None:
     ap.add_argument("--max-spend", type=float, default=5.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0, help="stop after this long")
     ap.add_argument("--poll", type=float, default=1.5)
+    ap.add_argument("--slip", type=float, default=0.01, help="limit this far through the touch (fills still at the book price)")
     args = ap.parse_args()
     if not 0 < args.usd <= 5:
         sys.exit("--usd must be in (0, 5]")
@@ -157,14 +158,19 @@ def main() -> None:
                         done.add(slug)
                         if args.live:
                             try:
-                                res = trader.create(limit_order(slug, intent, pv, qty, FOK))
-                                rec["result"] = res
-                                filled = bool(res.get("executions"))
-                                print(f"[{ts()}]   order {res.get('id')} filled={filled}", flush=True)
-                                if filled:
-                                    spent += qty * ask
+                                lim = min(0.99, pv + args.slip) if intent.endswith("LONG") else max(0.01, pv - args.slip)
+                                res = trader.create(limit_order(slug, intent, round(lim, 2), qty, FOK))
+                                o = trader.order_outcome(res["id"])
+                                rec["result"], rec["order"] = res, o
+                                got = float(o.get("cumQuantity") or 0)
+                                px = float((o.get("avgPx") or {}).get("value") or ask)
+                                comm = float((o.get("commissionNotionalTotalCollected") or {}).get("value") or 0)
+                                print(f"[{ts()}]   order {res.get('id')} state={o.get('state')} filled {got} of {qty} "
+                                      f"@ {px:.4f} fee {comm:.4f}", flush=True)
+                                if got > 0:
+                                    spent += got * px
                                     n_live += 1
-                                    pending.append({"slug": slug, "end": start + 300, "side": side, "ask": ask, "qty": qty, "fee": fee})
+                                    pending.append({"slug": slug, "end": start + 300, "side": side, "ask": px, "qty": got, "fee": comm})
                             except Exception as e:  # keep running; the order may or may not exist, so log it loudly
                                 rec["error"] = str(e)
                                 print(f"[{ts()}]   ORDER ERROR: {e}", flush=True)
