@@ -283,7 +283,10 @@ class Bot:
         if not c:
             return
         side, ask, depth, pv, intent = c
-        why = safety_check(side, book, self.last.get(slug), self.hist.get(slug, []), now, self.a)
+        why = None
+        if sum(1 for t in self.pending.values() if t.get("end") == start + 300 and t.get("side") == side) >= getattr(self.a, "max_per_window", 2):
+            why = f"correlation cap: already {getattr(self.a, "max_per_window", 2)} {side} positions open this window"   # one market-wide reversal hits them all
+        why = why or safety_check(side, book, self.last.get(slug), self.hist.get(slug, []), now, self.a)
         mv = None
         if not why:   # the book looks sane: now check the index price agrees and the lead is big enough for the time left
             mv = self.margin_view(asset, start, now)
@@ -450,6 +453,7 @@ def main() -> None:
     ap.add_argument("--max-feed-age", type=float, default=8.0, help="skip if the index price feed is older than this")
     ap.add_argument("--feed-poll", type=float, default=3.0, help="seconds between index price fetches")
     ap.add_argument("--t-min", type=float, default=15.0, help="stop looking this many seconds before the end")
+    ap.add_argument("--max-per-window", type=int, default=2, help="max same-side open positions across assets in one window (they reverse together)")
     ap.add_argument("--max-trades", type=int, default=60, help="live: stop after this many filled orders")
     ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0)
