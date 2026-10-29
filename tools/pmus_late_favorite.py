@@ -121,6 +121,9 @@ class Bot:
         self.px_try_at = 0.0
         self.px_busy = False
         self.attempts: dict[str, int] = {}
+        self.ptb: dict[tuple[str, int], float] = {}        # exchange-published price to beat per (asset, window start)
+        self.ptb_try: dict[tuple[str, int], float] = {}
+        self.ptb_busy = False
         self.halted: dict[str, str] = {}                   # asset -> reason
         self.done: set[str] = set()                        # market slugs already decided
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
@@ -214,6 +217,25 @@ class Bot:
         finally:
             self.px_busy = False
 
+    def _fetch_ptb(self, asset: str, start: int) -> None:
+        r = self.http.get(f"{GATEWAY}/v1/events/slug/{event_slug(start, asset)}")
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        if r.status_code != 200:
+            return
+        m = r.json().get("event", r.json())["markets"][0]
+        v = ((m.get("assetPriceTerms") or {}).get("priceToBeat") or {}).get("value")
+        if v is not None:
+            self.ptb[(asset, start)] = float(v)
+
+    async def _poll_ptb(self, asset: str, start: int) -> None:
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, self._fetch_ptb, asset, start)
+        except Exception:
+            self.ptb_try[(asset, start)] = time.time() + 6      # rate limited: wait a bit longer
+        finally:
+            self.ptb_busy = False
+
     def margin_view(self, asset: str, start: int, now: float):
         """How far ahead the index price is for this window, or a reason string if it cannot be judged."""
         d = self.px.get(asset) or {}
@@ -233,8 +255,11 @@ class Bot:
         sg = sigma_ref(prices)
         if sg <= 0:
             return "no volatility reference"
+        exact = (asset, start) in self.ptb          # the exchange's own price to beat, not my reconstruction of it
+        if exact:
+            p0 = self.ptb[(asset, start)]
         z = lead_z(p0, known, prices[-1], left, sg)
-        return {"z": z, "left": left, "side": "Up" if z >= 0 else "Down"}
+        return {"z": z, "left": left, "side": "Up" if z >= 0 else "Down", "exact": exact}
 
     # -- decisions -----------------------------------------------------------
     async def consider(self, asset: str, start: int, now: float) -> None:
@@ -257,7 +282,7 @@ class Bot:
             elif mv["side"] != side:
                 why = f"margin: index price has {mv['side']} ahead (z={mv['z']:+.1f}), book favors {side}"
             else:
-                mv["ub"] = reversal_ub(mv["left"], abs(mv["z"]))
+                mv["ub"] = reversal_ub(mv["left"], abs(mv["z"]), mv["exact"])
                 mv["edge"] = edge_after_risk(ask, taker_fee(ask, 1.0), mv["ub"])
                 if mv["edge"] < self.a.min_edge:
                     why = (f"margin: lead z={abs(mv['z']):.1f} with {mv['left']:.0f}s left can still reverse up to "
@@ -367,6 +392,14 @@ class Bot:
                             self.px_busy = True
                             self.px_try_at = now + self.a.feed_poll
                             asyncio.create_task(self._poll_prices())
+                        if not self.ptb_busy and now - start >= 65:     # the exchange publishes it about a minute in
+                            for a_ in self.a.assets:
+                                key = (a_, start)
+                                if key not in self.ptb and now - self.ptb_try.get(key, 0) > 8:
+                                    self.ptb_try[key] = now
+                                    self.ptb_busy = True
+                                    asyncio.create_task(self._poll_ptb(a_, start))
+                                    break
                         for asset in self.a.assets:
                             await self.consider(asset, start, now)
                         self.settle(now)

@@ -165,3 +165,14 @@ def test_limit_price_allows_up_to_the_edge_rule_not_just_one_cent(tmp_path):
     assert float(sent["price"]["value"]) >= 0.97                       # reaches past the 0.96 that missed
     assert float(sent["price"]["value"]) <= 0.99
     assert slug not in b.done and b.attempts[slug] == 1                # expired empty: eligible to try again
+
+
+def test_exchange_price_to_beat_replaces_the_reconstruction(tmp_path):
+    start = 1_800_000_000
+    now = start + 300 - 60
+    b = _bot(tmp_path, _prices(start, int(now), lead=3.0), px_ok_at=now)
+    recon = b.margin_view("btc", start, now)
+    assert recon["exact"] is False
+    b.ptb[("btc", start)] = 102.9              # the exchange says the price to beat was 102.9, nearly where price is
+    exch = b.margin_view("btc", start, now)
+    assert exch["exact"] is True and abs(exch["z"]) < abs(recon["z"])

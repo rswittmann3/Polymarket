@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from math import sqrt
+from math import erf, sqrt
 from pathlib import Path
 
 import httpx
@@ -53,7 +53,7 @@ def wilson_ub(k: int, n: int, zc: float = 1.96) -> float:
     return (ph + zc * zc / (2 * n) + zc * sqrt(ph * (1 - ph) / n + zc * zc / (4 * n * n))) / d
 
 
-def samples(data) -> list[tuple[int, float, bool]]:
+def samples(data) -> list[tuple[int, float, bool, float]]:
     out = []
     for dd in data.values():
         t0 = min(dd)
@@ -78,9 +78,33 @@ def samples(data) -> list[tuple[int, float, bool]]:
                 sig = sqrt((sq[ix(t)] - sq[ix(t - 540)]) / 540)
                 if sig > 0:
                     z = (mean_est - p0) / sig
-                    out.append((L, abs(z), (z >= 0) != up))
+                    fin = (pre[ix(E)] - pre[ix(E - 60)]) / 60
+                    out.append((L, abs(z), (z >= 0) != up, (fin - p0) / sig * (1 if z >= 0 else -1)))
             S += 300
     return out
+
+
+NOISE = {"exact": 0.50, "approx": 0.71}    # sd, in sigma units, of exchange-vs-reconstruction error (36 windows)
+
+
+def phi(x: float) -> float:
+    return 0.5 * (1 + erf(x / sqrt(2)))
+
+
+def build(smp, s: float) -> dict:
+    t = {}
+    for L in LS:
+        row = []
+        for i, lo in enumerate(ZE):
+            hi = ZE[i + 1] if i + 1 < len(ZE) else 1e9
+            cell = [x for x in smp if x[0] == L and lo <= x[1] < hi]
+            n = len(cell)
+            k = sum(phi(-x[3] / s) for x in cell)    # expected reversals once the measurement noise is added
+            row.append({"z_lo": lo, "n": n, "rev": round(k, 2), "ub": round(wilson_ub(k, n) if n else 1.0, 5)})
+        for j in range(1, len(row)):                 # a bigger lead can't be riskier
+            row[j]["ub"] = min(row[j]["ub"], row[j - 1]["ub"])
+        t[str(L)] = row
+    return t
 
 
 def main() -> None:
@@ -88,21 +112,13 @@ def main() -> None:
     ap.add_argument("--days", type=int, default=7)
     args = ap.parse_args()
     smp = samples(pull(args.days))
-    table = {}
-    for L in LS:
-        row = []
-        for i, lo in enumerate(ZE):
-            hi = ZE[i + 1] if i + 1 < len(ZE) else 1e9
-            s = [x for x in smp if x[0] == L and lo <= x[1] < hi]
-            k = sum(x[2] for x in s)
-            row.append({"z_lo": lo, "n": len(s), "rev": k, "ub": round(wilson_ub(k, len(s)), 5)})
-        for j in range(1, len(row)):               # a bigger lead can't be riskier
-            row[j]["ub"] = min(row[j]["ub"], row[j - 1]["ub"])
-        table[str(L)] = row
-    meta = {"source": f"{args.days} days of 1-second index prices, BTC/ETH/SOL/XRP",
+    meta = {"source": f"{args.days} days of 1-second index prices, BTC/ETH/SOL/XRP, with measurement noise added",
             "z": "(expected final average - price to beat)/RMS of 60 s changes over the last 540 s",
-            "ub": "Wilson 95% upper bound on the reversal rate, made monotone in z"}
-    OUT.write_text(json.dumps({"meta": meta, "table": table}, indent=1))
+            "noise": "exchange published values vs my candle reconstruction: sd 0.50 sigma on the price to beat and on the final average",
+            "exact": "price to beat taken from the exchange (noise on the final average only)",
+            "approx": "price to beat reconstructed from candles (noise on both ends)",
+            "ub": "Wilson 95% upper bound on the reversal rate, monotone in z"}
+    OUT.write_text(json.dumps({"meta": meta, "exact": build(smp, NOISE["exact"]), "approx": build(smp, NOISE["approx"])}, indent=1))
     print(f"wrote {OUT} from {len(smp)} samples")
 
 

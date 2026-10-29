@@ -10,9 +10,10 @@ moves in a minute:
 Why not a random-walk formula: the index is smooth, so one-second steps are tiny and persistent, and the real
 60-second spread is about 6.5x what a random walk built from one-second steps predicts. A normal model built that
 way called 2.7% reversals on windows it rated 99.99% safe. So `margin_table.json` holds what actually happened
-over 7 days (BTC/ETH/SOL/XRP, 8,064 windows): for each time-left bucket and lead size, how often the leader lost.
-The table stores a Wilson 95% upper bound on that rate, made monotone in z. Rebuild it with the history pull in
-tools/build_margin_table.py when volatility regimes change.
+over 7 days (BTC/ETH/SOL/XRP, 8,064 windows): for each time-left bucket and lead size, how often the leader lost,
+with the measured noise between my reconstruction and the exchange's published values added. The table stores a
+Wilson 95% upper bound on that rate, made monotone in z. Rebuild it with tools/build_margin_table.py when volatility
+regimes change.
 """
 from __future__ import annotations
 
@@ -23,8 +24,9 @@ from pathlib import Path
 WINDOW = 60
 SIGMA_SPAN = 540        # seconds of 60-second changes used for the volatility reference
 MAX_LEFT = 120          # beyond this the table has nothing: treat as unsafe
-_TABLE = json.loads((Path(__file__).parent / "margin_table.json").read_text())["table"]
-_BUCKETS = sorted(int(k) for k in _TABLE)
+_RAW = json.loads((Path(__file__).parent / "margin_table.json").read_text())
+_TABLES = {"exact": _RAW["exact"], "approx": _RAW["approx"]}   # see the "meta" block of margin_table.json
+_BUCKETS = sorted(int(k) for k in _TABLES["exact"])
 
 
 def sigma_ref(prices: list[float]) -> float:
@@ -47,14 +49,20 @@ def lead_z(p0: float, known_sum: float, s_now: float, left: float, sigma: float)
     return (expected - p0) / sigma
 
 
-def reversal_ub(left: float, z_abs: float) -> float:
+def reversal_ub(left: float, z_abs: float, exact: bool = False) -> float:
     """Upper bound (95%) on the chance the current leader loses, given |z| and seconds left. Rounds `left` UP to
-    the next table bucket (less time is safer, so this errs cautious); no data past MAX_LEFT, so 1.0."""
+    the next table bucket (less time is safer, so this errs cautious); no data past MAX_LEFT, so 1.0.
+
+    The bound includes the measurement noise between my 1-second-candle reconstruction and what the exchange
+    publishes (sd 0.5 sigma on each of the price to beat and the final average, measured on 36 windows). With the
+    exchange's own `priceToBeat` (exact=True) only the final average is noisy; with a reconstructed price to beat
+    (exact=False, the default and the cautious choice) both ends are."""
     if left > MAX_LEFT:
         return 1.0
+    table = _TABLES["exact" if exact else "approx"]
     bucket = next(b for b in _BUCKETS if left <= b)
-    ub = _TABLE[str(bucket)][0]["ub"]
-    for row in _TABLE[str(bucket)]:
+    ub = table[str(bucket)][0]["ub"]
+    for row in table[str(bucket)]:
         if z_abs >= row["z_lo"]:
             ub = row["ub"]
     return ub

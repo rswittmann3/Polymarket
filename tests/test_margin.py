@@ -37,7 +37,23 @@ def test_left_rounds_up_to_a_safer_bucket_only_in_the_cautious_direction():
 
 def test_coin_flip_leads_are_unsafe_late_leads_are_safe():
     assert reversal_ub(30, 0.2) > 0.05
-    assert reversal_ub(30, 1.2) < 0.01
+    assert reversal_ub(30, 1.2) < 0.10 < reversal_ub(30, 0.2)
+    assert reversal_ub(30, 3.0) < 0.01                       # a big lead with little time left is safe
+
+
+def test_exchange_price_to_beat_is_less_noisy_than_a_reconstruction():
+    for left, z in ((90, 1.7), (60, 1.2), (45, 0.9)):
+        assert reversal_ub(left, z, exact=True) < reversal_ub(left, z, exact=False)
+
+
+def test_the_eth_loss_would_have_been_blocked():
+    """ETH 19:45 UTC, bought Down at 0.95 with a 1.28 sigma lead and 59 s left; it settled Up (-$0.997).
+    The first version of the table priced that at 2.7%; with the measured exchange-vs-candle noise it is 5.5% or worse,
+    which is more than the 5% the 0.95 ask can afford."""
+    for exact in (True, False):
+        ub = reversal_ub(59, 1.28, exact=exact)
+        assert ub >= 0.055
+        assert edge_after_risk(0.95, 0.0695 * 0.95 * 0.05, ub) < 0
 
 
 def test_edge_after_risk():
