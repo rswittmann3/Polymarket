@@ -33,6 +33,7 @@ from pathlib import Path
 import httpx
 import websockets
 
+from pm_edges.margin import edge_after_risk, lead_z, reversal_ub, sigma_ref
 from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
@@ -115,6 +116,10 @@ class Bot:
         self.last: dict[str, float] = {}                    # slug -> last trade price (long scale)
         self.hist: dict[str, list] = {}                     # slug -> [(t, long_mid)]
         self.skipped: set = set()
+        self.px: dict[str, dict[int, float]] = {a: {} for a in args.assets}   # 1-second index prices
+        self.px_ok_at = 0.0
+        self.px_try_at = 0.0
+        self.px_busy = False
         self.halted: dict[str, str] = {}                   # asset -> reason
         self.done: set[str] = set()                        # market slugs already decided
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
@@ -183,6 +188,53 @@ class Bot:
             del self.pending[asset]
             self.save_state()
 
+    # -- index price feed ------------------------------------------------------
+    def _fetch_prices(self) -> None:
+        now = int(time.time())
+        r = self.http.get(f"{GATEWAY}/v1/asset-prices/history",
+                          params=[("assets", f"crypto:{a}") for a in self.a.assets]
+                          + [("from", now - 720), ("to", 0), ("bucket", "ASSET_PRICE_BUCKET_1S")])
+        if r.status_code == 429:
+            raise RuntimeError("429")
+        r.raise_for_status()
+        for srs in r.json()["series"]:
+            d = self.px.setdefault(srs["asset"]["symbol"], {})
+            for c in srs["candles"]:
+                d[c["timestamp"]] = float(c["close"])
+            for t in [t for t in d if t < now - 900]:
+                del d[t]
+        self.px_ok_at = time.time()
+
+    async def _poll_prices(self) -> None:
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, self._fetch_prices)
+        except Exception as e:   # rate limited or a blip: back off and let the margin check fail closed meanwhile
+            self.px_try_at = time.time() + (7.0 if "429" in str(e) else 2.0)
+        finally:
+            self.px_busy = False
+
+    def margin_view(self, asset: str, start: int, now: float):
+        """How far ahead the index price is for this window, or a reason string if it cannot be judged."""
+        d = self.px.get(asset) or {}
+        if not d or now - self.px_ok_at > self.a.max_feed_age or now - max(d) > self.a.max_feed_age:
+            return "no fresh index price"
+        t_eff = max(d) + 1                      # first second not yet published
+        end = start + 300
+        left = end - t_eff
+        if left < 1:
+            return "window about to close"
+        try:
+            p0 = sum(d[start - 60 + i] for i in range(60)) / 60
+            known = sum(d[end - 60 + i] for i in range(60 - left)) if left < 60 else 0.0
+            prices = [d[t] for t in range(t_eff - 600, t_eff)]
+        except KeyError:
+            return "index price history incomplete"
+        sg = sigma_ref(prices)
+        if sg <= 0:
+            return "no volatility reference"
+        z = lead_z(p0, known, prices[-1], left, sg)
+        return {"z": z, "left": left, "side": "Up" if z >= 0 else "Down"}
+
     # -- decisions -----------------------------------------------------------
     async def consider(self, asset: str, start: int, now: float) -> None:
         slug = updown_slug(start, asset)
@@ -196,6 +248,19 @@ class Bot:
             return
         side, ask, depth, pv, intent = c
         why = safety_check(side, book, self.last.get(slug), self.hist.get(slug, []), now, self.a)
+        mv = None
+        if not why:   # the book looks sane: now check the index price agrees and the lead is big enough for the time left
+            mv = self.margin_view(asset, start, now)
+            if isinstance(mv, str):
+                why = "margin: " + mv
+            elif mv["side"] != side:
+                why = f"margin: index price has {mv['side']} ahead (z={mv['z']:+.1f}), book favors {side}"
+            else:
+                mv["ub"] = reversal_ub(mv["left"], abs(mv["z"]))
+                mv["edge"] = edge_after_risk(ask, taker_fee(ask, 1.0), mv["ub"])
+                if mv["edge"] < self.a.min_edge:
+                    why = (f"margin: lead z={abs(mv['z']):.1f} with {mv['left']:.0f}s left can still reverse up to "
+                           f"{mv['ub']:.1%}, edge {mv['edge'] * 100:+.1f}c at {ask:.2f}")
         if why:
             if (slug, why.split()[0]) not in self.skipped:
                 self.skipped.add((slug, why.split()[0]))
@@ -211,9 +276,11 @@ class Bot:
             return
         fee = taker_fee(ask, qty)
         self.say(f"{asset} {slug[-6:]} T-{left:.0f}s favorite {side} @ {ask:.2f} -> BUY {qty} "
-                 f"(${qty * ask:.2f}) {'LIVE' if self.a.live else 'dry'}")
+                 f"(${qty * ask:.2f}) z={abs(mv['z']):.1f} reversal<={mv['ub']:.1%} edge {mv['edge'] * 100:+.1f}c "
+                 f"{'LIVE' if self.a.live else 'dry'}")
         rec = {"asset": asset, "slug": slug, "t": round(now), "left": round(left), "side": side, "ask": ask,
-               "qty": qty, "live": self.a.live, "bid": book.bids[0], "offer": book.offers[0]}
+               "qty": qty, "live": self.a.live, "bid": book.bids[0], "offer": book.offers[0],
+               "margin": {k: round(v, 5) if isinstance(v, float) else v for k, v in mv.items()}}
         trade = {"slug": slug, "ev": event_slug(start, asset), "end": start + 300, "side": side, "ask": ask,
                  "qty": qty, "fee": fee, "next_check": start + 300 + 20}
         if self.a.live:
@@ -283,6 +350,10 @@ class Bot:
                         except asyncio.TimeoutError:
                             pass
                         now = time.time()
+                        if not self.px_busy and now >= self.px_try_at:     # keep the 1-second index prices fresh
+                            self.px_busy = True
+                            self.px_try_at = now + self.a.feed_poll
+                            asyncio.create_task(self._poll_prices())
                         for asset in self.a.assets:
                             await self.consider(asset, start, now)
                         self.settle(now)
@@ -308,13 +379,16 @@ def main() -> None:
     ap.add_argument("--usd", type=float, default=1.0, help="stake per trade (max 5)")
     ap.add_argument("--min-ask", type=float, default=0.95)
     ap.add_argument("--max-ask", type=float, default=0.99)
-    ap.add_argument("--t-max", type=float, default=120.0, help="start looking this many seconds before the end")
+    ap.add_argument("--t-max", type=float, default=100.0, help="start looking this many seconds before the end")
     ap.add_argument("--max-spread", type=float, default=0.08, help="skip books wider than this (bid/offer)")
     ap.add_argument("--last-tol", type=float, default=0.03, help="last trade must be within this of --min-ask")
     ap.add_argument("--drop-secs", type=float, default=20.0)
     ap.add_argument("--max-drop", type=float, default=0.03, help="skip if the favorite fell this much in --drop-secs")
     ap.add_argument("--max-off-high", type=float, default=0.05, help="skip if this far below its 60s high")
-    ap.add_argument("--t-min", type=float, default=45.0, help="stop looking this many seconds before the end")
+    ap.add_argument("--min-edge", type=float, default=0.005, help="required worst-case profit per share (dollars)")
+    ap.add_argument("--max-feed-age", type=float, default=8.0, help="skip if the index price feed is older than this")
+    ap.add_argument("--feed-poll", type=float, default=3.0, help="seconds between index price fetches")
+    ap.add_argument("--t-min", type=float, default=15.0, help="stop looking this many seconds before the end")
     ap.add_argument("--max-trades", type=int, default=60, help="live: stop after this many filled orders")
     ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0)

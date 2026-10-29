@@ -67,3 +67,68 @@ def test_falling_favorite_is_blocked():
 
 def test_no_last_trade_fails_closed():
     assert "no last trade" in chk("Up", 0.95, 0.96, None)
+
+
+def _bot(tmp_path, px, px_ok_at):
+    import io
+    import types
+    args = types.SimpleNamespace(assets=["btc"], max_feed_age=8.0, feed_poll=3.0, fresh=True, live=False, stop_on_any_loss=False,
+                                 t_min=15.0, t_max=100.0, min_ask=0.95, max_ask=0.99, usd=1.0, slip=0.01, min_edge=0.005,
+                                 max_spread=0.08, last_tol=0.03, drop_secs=20.0, max_drop=0.03, max_off_high=0.05,
+                                 max_trades=60, max_spend=100.0)
+    late.STATE = tmp_path / "state.json"
+    b = late.Bot(args, None, None, io.StringIO())
+    b.px = {"btc": px}
+    b.px_ok_at = px_ok_at
+    return b
+
+
+def _prices(start, t_now, lead):
+    """Dense 1-second prices: flat at 100 through the window's open, then `lead` above it, with a gentle wobble."""
+    px = {}
+    for t in range(start - 700, t_now):
+        px[t] = 100.0 if t < start else 100.0 + lead + (0.05 if t % 2 else -0.05)
+    return px
+
+
+def test_consider_buys_when_book_and_index_price_agree_and_lead_is_big(tmp_path):
+    import asyncio
+    start = 1_800_000_000
+    now = start + 300 - 60                                  # 60 s left
+    px = _prices(start, int(now), lead=3.0)                 # 3.0 above the price to beat, calm series
+    b = _bot(tmp_path, px, px_ok_at=now)
+    slug = late.updown_slug(start, "btc")
+    b.books[slug] = Book(slug, "MARKET_STATE_OPEN", [(0.01, 500.0)], [(0.03, 500.0)])   # Down 0.99 ... Up favorite? no: Up ask 0.03
+    b.last[slug] = 0.97
+    # book says Up is the favorite: long offer 0.97, bid 0.96
+    b.books[slug] = Book(slug, "MARKET_STATE_OPEN", [(0.96, 500.0)], [(0.97, 500.0)])
+    b.hist[slug] = [(now - 30, 0.965), (now - 1, 0.965)]
+    asyncio.run(b.consider("btc", start, now))
+    assert "btc" in b.pending and b.pending["btc"]["side"] == "Up"
+
+
+def test_consider_refuses_when_index_price_says_the_other_side_leads(tmp_path):
+    import asyncio
+    start = 1_800_000_000
+    now = start + 300 - 60
+    px = _prices(start, int(now), lead=-3.0)                # Down is clearly ahead on the index
+    b = _bot(tmp_path, px, px_ok_at=now)
+    slug = late.updown_slug(start, "btc")
+    b.books[slug] = Book(slug, "MARKET_STATE_OPEN", [(0.96, 500.0)], [(0.97, 500.0)])  # book thinks Up
+    b.last[slug] = 0.97
+    b.hist[slug] = [(now - 30, 0.965), (now - 1, 0.965)]
+    asyncio.run(b.consider("btc", start, now))
+    assert "btc" not in b.pending
+
+
+def test_consider_fails_closed_without_a_fresh_index_price(tmp_path):
+    import asyncio
+    start = 1_800_000_000
+    now = start + 300 - 60
+    b = _bot(tmp_path, _prices(start, int(now), lead=3.0), px_ok_at=now - 60)   # feed 60 s stale
+    slug = late.updown_slug(start, "btc")
+    b.books[slug] = Book(slug, "MARKET_STATE_OPEN", [(0.96, 500.0)], [(0.97, 500.0)])
+    b.last[slug] = 0.97
+    b.hist[slug] = [(now - 30, 0.965), (now - 1, 0.965)]
+    asyncio.run(b.consider("btc", start, now))
+    assert "btc" not in b.pending

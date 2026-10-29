@@ -28,5 +28,8 @@ pm_edges = "pm_edges.cli:main"
 [tool.setuptools]
 packages = ["pm_edges"]
 
+[tool.setuptools.package-data]
+pm_edges = ["margin_table.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
