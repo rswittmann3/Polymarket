@@ -59,6 +59,33 @@ def pick(book: Book, lo: float, hi: float):
     return None
 
 
+def safety_check(side: str, book: Book, last_long: float | None, hist, now: float, args) -> str | None:
+    """Return a reason to NOT buy, or None if the favorite is backed by a real, steady market.
+
+    Why: the one loss so far (ETH, bought Up 0.95) was a 0.15/0.95 book: a high ask in an empty market,
+    with the last trade at ~0.01 for Up. A favorite must be (1) in a tight book, (2) confirmed by actual
+    trades, and (3) not falling. `hist` is [(t, long_mid)] oldest first."""
+    if not book.bids or not book.offers:
+        return "one-sided book"
+    bid, offer = book.bids[0][0], book.offers[0][0]
+    if offer - bid > args.max_spread:
+        return f"wide spread {bid:.2f}/{offer:.2f}"
+    sgn = (lambda x: x) if side == "Up" else (lambda x: 1 - x)
+    if last_long is None:
+        return "no last trade to confirm"
+    if sgn(last_long) < args.min_ask - args.last_tol:
+        return f"last trade {sgn(last_long):.2f} disagrees with quote"
+    mids = [(t, sgn(m)) for t, m in hist]
+    cur = sgn((bid + offer) / 2)
+    ref = [m for t, m in mids if now - t >= args.drop_secs]
+    if ref and ref[-1] - cur >= args.max_drop:
+        return f"falling: {ref[-1]:.2f} -> {cur:.2f} in {args.drop_secs:g}s"
+    recent = [m for t, m in mids if now - t <= 60]
+    if recent and max(recent) - cur >= args.max_off_high:
+        return f"{max(recent) - cur:.2f} below its 60s high"
+    return None
+
+
 def book_from_ws(md: dict) -> Book:
     lv = lambda rows: [(float(x["px"]["value"]), float(x["qty"])) for x in rows]  # noqa: E731
     return Book(md["marketSlug"], md.get("state", ""), sorted(lv(md.get("bids", [])), reverse=True),
@@ -84,6 +111,9 @@ class Bot:
     def __init__(self, args, trader: Trader | None, http: httpx.Client, log) -> None:
         self.a, self.trader, self.http, self.log = args, trader, http, log
         self.books: dict[str, Book] = {}
+        self.last: dict[str, float] = {}                    # slug -> last trade price (long scale)
+        self.hist: dict[str, list] = {}                     # slug -> [(t, long_mid)]
+        self.skipped: set = set()
         self.halted: dict[str, str] = {}                   # asset -> reason
         self.done: set[str] = set()                        # market slugs already decided
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
@@ -163,6 +193,14 @@ class Bot:
         if not c:
             return
         side, ask, depth, pv, intent = c
+        why = safety_check(side, book, self.last.get(slug), self.hist.get(slug, []), now, self.a)
+        if why:
+            if (slug, why.split()[0]) not in self.skipped:
+                self.skipped.add((slug, why.split()[0]))
+                self.say(f"{asset} {slug[-6:]} T-{left:.0f}s {side} @ {ask:.2f} SKIPPED: {why}")
+                self.emit({"asset": asset, "slug": slug, "t": round(now), "left": round(left), "skipped": why,
+                           "side": side, "ask": ask, "bid": book.bids[0], "offer": book.offers[0]})
+            return
         qty = math.floor(self.a.usd / ask * 100) / 100
         self.done.add(slug)
         self.save_state()
@@ -231,7 +269,15 @@ class Bot:
                             raw = await asyncio.wait_for(ws.recv(), 1.0)
                             md = json.loads(raw).get("marketData")
                             if md:
-                                self.books[md["marketSlug"]] = book_from_ws(md)
+                                b = book_from_ws(md)
+                                self.books[b.slug] = b
+                                lt = ((md.get("stats") or {}).get("lastTradePx") or {}).get("value")
+                                if lt is not None:
+                                    self.last[b.slug] = float(lt)
+                                if b.bids and b.offers:
+                                    h = self.hist.setdefault(b.slug, [])
+                                    h.append((time.time(), (b.bids[0][0] + b.offers[0][0]) / 2))
+                                    del h[:-400]
                         except asyncio.TimeoutError:
                             pass
                         now = time.time()
@@ -258,7 +304,12 @@ def main() -> None:
     ap.add_argument("--min-ask", type=float, default=0.95)
     ap.add_argument("--max-ask", type=float, default=0.99)
     ap.add_argument("--t-max", type=float, default=120.0, help="start looking this many seconds before the end")
-    ap.add_argument("--t-min", type=float, default=25.0, help="stop looking this many seconds before the end")
+    ap.add_argument("--max-spread", type=float, default=0.08, help="skip books wider than this (bid/offer)")
+    ap.add_argument("--last-tol", type=float, default=0.03, help="last trade must be within this of --min-ask")
+    ap.add_argument("--drop-secs", type=float, default=20.0)
+    ap.add_argument("--max-drop", type=float, default=0.03, help="skip if the favorite fell this much in --drop-secs")
+    ap.add_argument("--max-off-high", type=float, default=0.05, help="skip if this far below its 60s high")
+    ap.add_argument("--t-min", type=float, default=45.0, help="stop looking this many seconds before the end")
     ap.add_argument("--max-trades", type=int, default=60, help="live: stop after this many filled orders")
     ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0)

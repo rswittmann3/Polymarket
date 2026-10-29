@@ -33,3 +33,37 @@ def test_short_fill_price_is_converted_from_long_scale():
     # the exchange reports avgPx on the Up scale: a Down fill at 0.99 shows as 0.01
     src = pathlib.Path(late.__file__).read_text()
     assert "1 - px" in src and "intent.endswith(\"LONG\")" in src
+
+
+class A:  # default thresholds
+    max_spread, last_tol, drop_secs, max_drop, max_off_high, min_ask = 0.08, 0.03, 20.0, 0.03, 0.05, 0.95
+
+
+def chk(side, bid, offer, last, hist=(), now=100.0):
+    b = Book("s", "MARKET_STATE_OPEN", [(bid, 10.0)], [(offer, 10.0)])
+    return late.safety_check(side, b, last, list(hist), now, A)
+
+
+def test_replay_losing_eth_trade_is_blocked():
+    # 18:09:25 ETH: long bid 0.15 / offer 0.95, last trade 0.01. Bought Up at 0.90, settled Down, lost $0.955.
+    assert "spread" in chk("Up", 0.15, 0.95, 0.01)
+    assert "disagrees" in chk("Up", 0.04, 0.10, 0.01)        # even in a tight book, last trade must agree
+
+
+def test_replay_winning_trades_still_pass():
+    assert chk("Down", 0.04, 0.09, 0.05) is None             # sol 18:05, bought Down, won
+    assert chk("Down", 0.05, 0.07, 0.05) is None             # eth 17:50
+    assert chk("Down", 0.01, 0.03, 0.01) is None             # btc 17:40
+
+
+def test_falling_favorite_is_blocked():
+    # Down favorite (long mid rising 0.04 -> 0.08 over 20s means Down mid fell 0.96 -> 0.92)
+    assert "falling" in chk("Down", 0.07, 0.09, 0.05, hist=[(70.0, 0.04), (99.0, 0.08)], now=100.0)
+    assert chk("Down", 0.07, 0.09, 0.05, hist=[(60.0, 0.01), (95.0, 0.08)], now=100.0) is not None
+    # slow slide: no 20s drop >= 0.03, but 0.05 below the 60s high
+    assert "60s high" in chk("Down", 0.07, 0.09, 0.05, hist=[(45.0, 0.01), (75.0, 0.05), (95.0, 0.075)], now=100.0)
+    assert chk("Down", 0.04, 0.06, 0.05, hist=[(70.0, 0.05), (99.0, 0.05)], now=100.0) is None
+
+
+def test_no_last_trade_fails_closed():
+    assert "no last trade" in chk("Up", 0.95, 0.96, None)
