@@ -31,7 +31,13 @@ def find_open_window(http: httpx.Client, min_left: float):
     now = time.time()
     start = int(now // 300) * 300
     slug = updown_slug(start)
-    book = get_book(http, slug)
+    try:
+        book = get_book(http, slug)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code != 429:
+            raise
+        time.sleep(5)  # public gateway rate limit
+        return None
     left = start + 300 - now
     if book and book.open and left >= min_left and book.offers and book.bids:
         return slug, book, left
@@ -63,7 +69,8 @@ def main() -> None:
         while found is None:
             found = find_open_window(http, args.min_left)
             if found is None:
-                time.sleep(2)  # between windows, or too close to the end: wait for the next one
+                # too close to the end of this window: sleep until the next one has opened
+                time.sleep(max(2.0, (int(time.time() // 300) + 1) * 300 + 3 - time.time()) if time.time() % 300 > 300 - args.min_left else 3)
         slug, book, left = found
         ask, ask_qty = book.offers[0]
         bid = book.bids[0][0]

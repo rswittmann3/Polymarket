@@ -34,3 +34,12 @@ def test_buy_both_sides_never_below_one_on_single_book():
 def test_order_body():
     o = limit_order("m", "ORDER_INTENT_BUY_LONG", 0.5, 2, "TIME_IN_FORCE_FILL_OR_KILL")
     assert o["price"] == {"value": "0.50", "currency": "USD"} and o["quantity"] == 2
+
+
+def test_preview_wraps_order_in_request(monkeypatch):
+    from pm_edges.pmus import Trader
+    seen = {}
+    t = Trader(Signer("k", base64.b64encode(bytes(64)).decode()))
+    monkeypatch.setattr(t, "_call", lambda m, p, b=None: seen.update(m=m, p=p, b=b) or {})
+    t.preview({"marketSlug": "x"})
+    assert seen["p"] == "/v1/order/preview" and seen["b"] == {"request": {"marketSlug": "x"}}

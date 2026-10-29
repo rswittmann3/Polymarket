@@ -82,7 +82,7 @@ class Trader:
         return self._call("GET", "/v1/account/balances")
 
     def preview(self, order: dict) -> dict:
-        return self._call("POST", "/v1/order/preview", order)
+        return self._call("POST", "/v1/order/preview", {"request": order})  # preview wraps the order
 
     def create(self, order: dict) -> dict:
         return self._call("POST", "/v1/orders", order)
