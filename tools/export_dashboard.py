@@ -202,7 +202,9 @@ def snapshot() -> dict:
     try:
         account = build_account()
     except Exception as e:   # no credentials / exchange unreachable: the page still shows the orders
-        account = {"error": str(e)[:200], "updated": iso(time_now()), "bot": "Running" if bot_running() else "Stopped",
+        msg = ("no Polymarket US key found: put POLYMARKET_KEY_ID and POLYMARKET_SECRET_KEY in a .env file in the repo root"
+               if isinstance(e, KeyError) else str(e)[:200])
+        account = {"error": msg, "updated": iso(time_now()), "bot": "Running" if bot_running() else "Stopped",
                    "balance": None, "buying_power": None, "start_balance": START_BALANCE, "halted": "", "stop_all": False}
     return {"trades": trades, "account": account, "generated": iso(time_now())}
 
