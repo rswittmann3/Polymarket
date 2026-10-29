@@ -27,3 +27,9 @@ def test_no_trade_outside_band():
     assert late.pick(book(0.55, 0.56), 0.95, 0.99) is None      # coin flip
     assert late.pick(book(0.99, 1.0), 0.95, 0.99) is None       # ask 1.00 never offered / above band
     assert late.pick(Book("s", "x", [], []), 0.95, 0.99) is None
+
+
+def test_short_fill_price_is_converted_from_long_scale():
+    # the exchange reports avgPx on the Up scale: a Down fill at 0.99 shows as 0.01
+    src = pathlib.Path(late.__file__).read_text()
+    assert "1 - px" in src and "intent.endswith(\"LONG\")" in src

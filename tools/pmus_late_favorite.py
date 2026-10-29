@@ -170,7 +170,9 @@ class Bot:
                 return
             rec["order"] = o
             got = float(o.get("cumQuantity") or 0)
-            px = float((o.get("avgPx") or {}).get("value") or ask)
+            px = float((o.get("avgPx") or {}).get("value") or 0)
+            # avgPx is on the long (Up) scale; a Down fill at 0.99 reports 0.01
+            px = ask if px <= 0 else px if intent.endswith("LONG") else 1 - px
             comm = float((o.get("commissionNotionalTotalCollected") or {}).get("value") or 0)
             self.say(f"  order {res.get('id')} state={o.get('state')} filled {got} of {qty} @ {px:.4f} fee {comm:.4f}")
             if got > 0:
@@ -216,8 +218,8 @@ class Bot:
                                 or self.n_live >= self.a.max_trades):
                             self.say("all assets halted or caps reached; done. " + self.summary())
                             return
-            except (websockets.ConnectionClosed, OSError) as e:
-                self.say(f"websocket dropped ({e}); reconnecting in 3s")
+            except Exception as e:  # any stream failure: reconnect; open trades keep being tracked
+                self.say(f"websocket error ({type(e).__name__}: {e}); reconnecting in 3s")
                 await asyncio.sleep(3)
         self.say("finished. " + self.summary())
 
