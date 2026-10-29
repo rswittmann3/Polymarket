@@ -49,3 +49,15 @@ def test_edge_after_risk():
     assert edge_after_risk(0.95, 0.0027, reversal_ub(88, 0.03)) < 0
     # the SOL loss: 0.97 ask, lead 0.88 with 96 s left
     assert edge_after_risk(0.97, 0.002, reversal_ub(96, 0.88)) < 0
+
+
+def test_max_price_is_the_highest_ask_that_still_clears_the_edge():
+    from pm_edges.margin import max_price
+    # the XRP case: reversal risk 0.7%, edge floor 0.5c -> paying 0.97 was still fine (and 0.96 missed the fill)
+    assert max_price(0.007, 0.005) >= 0.97
+    assert max_price(0.015, 0.005) >= 0.96            # the BTC case
+    p = max_price(0.015, 0.005)
+    assert edge_after_risk(p, 0.0695 * p * (1 - p), 0.015) >= 0.005
+    assert edge_after_risk(p + 0.01, 0.0695 * (p + 0.01) * (0.99 - p), 0.015) < 0.005   # one more cent is too dear
+    assert max_price(0.50, 0.005) is not None and max_price(0.50, 0.005) < 0.5           # coin flips only below fair value
+    assert max_price(1.0, 0.0) is None                                                    # never buy a sure loser

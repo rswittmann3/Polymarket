@@ -75,7 +75,7 @@ def _bot(tmp_path, px, px_ok_at):
     args = types.SimpleNamespace(assets=["btc"], max_feed_age=8.0, feed_poll=3.0, fresh=True, live=False, stop_on_any_loss=False,
                                  t_min=15.0, t_max=100.0, min_ask=0.95, max_ask=0.99, usd=1.0, slip=0.01, min_edge=0.005,
                                  max_spread=0.08, last_tol=0.03, drop_secs=20.0, max_drop=0.03, max_off_high=0.05,
-                                 max_trades=60, max_spend=100.0)
+                                 max_trades=60, max_spend=100.0, max_attempts=3)
     late.STATE = tmp_path / "state.json"
     b = late.Bot(args, None, None, io.StringIO())
     b.px = {"btc": px}
@@ -132,3 +132,36 @@ def test_consider_fails_closed_without_a_fresh_index_price(tmp_path):
     b.hist[slug] = [(now - 30, 0.965), (now - 1, 0.965)]
     asyncio.run(b.consider("btc", start, now))
     assert "btc" not in b.pending
+
+
+def test_limit_price_allows_up_to_the_edge_rule_not_just_one_cent(tmp_path):
+    """The XRP miss: quote 0.95, offer repriced to 0.97 within 50 ms. The order's limit must reach 0.97."""
+    import asyncio
+    import types
+    sent = {}
+
+    class FakeTrader:
+        def create(self, order):
+            sent.update(order)
+            return {"id": "X"}
+
+        def order_outcome(self, oid):
+            return {"state": "ORDER_STATE_EXPIRED", "cumQuantity": 0}
+
+    start = 1_800_000_000
+    now = start + 300 - 60
+    b = _bot(tmp_path, _prices(start, int(now), lead=3.0), px_ok_at=now)
+    b.a.live, b.trader = True, FakeTrader()
+    slug = late.updown_slug(start, "btc")
+    b.books[slug] = Book(slug, "MARKET_STATE_OPEN", [(0.94, 500.0)], [(0.95, 500.0)])
+    b.last[slug] = 0.95
+    b.hist[slug] = [(now - 30, 0.945), (now - 1, 0.945)]
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        b.run_in_executor = None
+        await b.consider("btc", start, now)
+    asyncio.run(run())
+    assert float(sent["price"]["value"]) >= 0.97                       # reaches past the 0.96 that missed
+    assert float(sent["price"]["value"]) <= 0.99
+    assert slug not in b.done and b.attempts[slug] == 1                # expired empty: eligible to try again

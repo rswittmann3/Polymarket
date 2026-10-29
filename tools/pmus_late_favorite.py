@@ -33,7 +33,7 @@ from pathlib import Path
 import httpx
 import websockets
 
-from pm_edges.margin import edge_after_risk, lead_z, reversal_ub, sigma_ref
+from pm_edges.margin import edge_after_risk, lead_z, max_price, reversal_ub, sigma_ref
 from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
@@ -120,6 +120,7 @@ class Bot:
         self.px_ok_at = 0.0
         self.px_try_at = 0.0
         self.px_busy = False
+        self.attempts: dict[str, int] = {}
         self.halted: dict[str, str] = {}                   # asset -> reason
         self.done: set[str] = set()                        # market slugs already decided
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
@@ -287,7 +288,14 @@ class Bot:
             if self.n_live >= self.a.max_trades or self.spent + self.a.usd > self.a.max_spend:
                 self.say("  live caps reached; not trading")
                 return
-            lim = min(0.99, pv + self.a.slip) if intent.endswith("LONG") else max(0.01, pv - self.a.slip)
+            # Offers flicker (one vanished within 50 ms of our order), so a limit one cent past the quote misses.
+            # An IOC order pays only what is actually offered, so allow up to the highest price that still clears
+            # the edge rule: price improvement is kept, and we never pay more than the model says is worth it.
+            top = min(0.99, max(ask, max_price(mv["ub"], self.a.min_edge) or ask))
+            if intent.endswith("LONG"):
+                lim = math.floor(top * 100 + 1e-9) / 100
+            else:   # Down is bought as a short: its price is 1 - the long price, so a higher Down price is a lower long price
+                lim = max(0.01, math.ceil((1 - top) * 100 - 1e-9) / 100)
             loop = asyncio.get_running_loop()
             try:
                 res = await loop.run_in_executor(None, self.trader.create,
@@ -306,6 +314,11 @@ class Bot:
             px = ask if px <= 0 else px if intent.endswith("LONG") else 1 - px
             comm = float((o.get("commissionNotionalTotalCollected") or {}).get("value") or 0)
             self.say(f"  order {res.get('id')} state={o.get('state')} filled {got} of {qty} @ {px:.4f} fee {comm:.4f}")
+            if got <= 0:      # expired empty: look again on the next book update, up to --max-attempts per window
+                n = self.attempts[slug] = self.attempts.get(slug, 0) + 1
+                if n < self.a.max_attempts:
+                    self.done.discard(slug)
+                    self.say(f"  not filled (attempt {n}/{self.a.max_attempts}); will look again")
             if got > 0:
                 self.spent += got * px
                 self.n_live += 1
@@ -386,6 +399,7 @@ def main() -> None:
     ap.add_argument("--max-drop", type=float, default=0.03, help="skip if the favorite fell this much in --drop-secs")
     ap.add_argument("--max-off-high", type=float, default=0.05, help="skip if this far below its 60s high")
     ap.add_argument("--min-edge", type=float, default=0.005, help="required worst-case profit per share (dollars)")
+    ap.add_argument("--max-attempts", type=int, default=3, help="orders per window per asset if the first expire empty")
     ap.add_argument("--max-feed-age", type=float, default=8.0, help="skip if the index price feed is older than this")
     ap.add_argument("--feed-poll", type=float, default=3.0, help="seconds between index price fetches")
     ap.add_argument("--t-min", type=float, default=15.0, help="stop looking this many seconds before the end")

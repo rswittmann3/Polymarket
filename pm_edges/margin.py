@@ -63,3 +63,14 @@ def reversal_ub(left: float, z_abs: float) -> float:
 def edge_after_risk(ask: float, fee_per_share: float, ub: float) -> float:
     """Worst-case expected profit per share: win probability (1 - ub) less the price and the taker fee."""
     return (1.0 - ub) - ask - fee_per_share
+
+
+def max_price(ub: float, min_edge: float, theta: float = 0.0695) -> float | None:
+    """Highest ask (in whole cents, at most 0.99) still worth paying: the worst-case edge
+    (1 - ub) - price - fee(price) stays at or above `min_edge`. None when even 1 cent is too dear."""
+    best = None
+    for cents in range(1, 100):
+        p = cents / 100
+        if (1.0 - ub) - p - theta * p * (1 - p) >= min_edge:
+            best = p
+    return best
