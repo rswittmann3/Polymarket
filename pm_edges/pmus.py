@@ -93,10 +93,18 @@ class Trader:
         fills, so fill status must come from `cumQuantity`, never from `executions` being non-empty."""
         o: dict = {}
         for _ in range(tries):
-            o = self._call("GET", f"/v1/order/{order_id}")["order"]
+            try:
+                o = self._call("GET", f"/v1/order/{order_id}")["order"]
+            except RuntimeError as e:
+                if "404" not in str(e):  # a just-created order can be briefly unreadable
+                    raise
+                time.sleep(0.4)
+                continue
             if o.get("state") not in ("ORDER_STATE_NEW", "ORDER_STATE_PENDING_NEW"):
                 break
             time.sleep(0.4)
+        if not o:
+            raise RuntimeError(f"order {order_id} not readable after {tries} tries; check the app before assuming it did not fill")
         return o
 
     def close_position(self, slug: str) -> dict:

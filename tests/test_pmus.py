@@ -53,3 +53,22 @@ def test_order_outcome_trusts_cum_quantity_not_executions(monkeypatch):
     monkeypatch.setattr(t, "_call", lambda m, p, b=None: next(states))
     monkeypatch.setattr("pm_edges.pmus.time.sleep", lambda s: None)
     assert t.order_outcome("x")["state"] == "ORDER_STATE_EXPIRED"
+
+
+def test_order_outcome_retries_404_then_raises(monkeypatch):
+    from pm_edges.pmus import Trader
+    t = Trader(Signer("k", base64.b64encode(bytes(64)).decode()))
+    calls = []
+
+    def fake(m, p, b=None):
+        calls.append(p)
+        if len(calls) < 3:
+            raise RuntimeError("GET /v1/order/x -> 404: Order not found")
+        return {"order": {"state": "ORDER_STATE_FILLED", "cumQuantity": 1}}
+    monkeypatch.setattr(t, "_call", fake)
+    monkeypatch.setattr("pm_edges.pmus.time.sleep", lambda s: None)
+    assert t.order_outcome("x")["cumQuantity"] == 1 and len(calls) == 3
+    monkeypatch.setattr(t, "_call", lambda m, p, b=None: (_ for _ in ()).throw(RuntimeError("404 nope")))
+    import pytest
+    with pytest.raises(RuntimeError, match="not readable"):
+        t.order_outcome("x", tries=2)
