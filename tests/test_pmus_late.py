@@ -265,3 +265,10 @@ def test_unfilled_resting_order_is_cancelled_before_the_deadline(tmp_path):
     asyncio.run(bot._place_resting("btc", 1000, "slug-btc", "Up", "ORDER_INTENT_BUY_LONG", 0.95, b, {"asset": "btc"}, 1100.0, 100.0))
     asyncio.run(bot.manage_resting(1295.0))                                    # 5 s left < 12 s cancel threshold
     assert bot.trader.cancelled == ["O1"] and "btc" not in bot.resting and "btc" not in bot.pending
+
+
+def test_adjusted_risk_scales_and_floors():
+    assert late.adjusted_risk(0.002) == 0.002                       # defaults change nothing
+    assert late.adjusted_risk(0.002, 1.0, 0.03) == 0.03             # floor lifts the optimistic tail
+    assert late.adjusted_risk(0.05, 2.0, 0.03) == 0.10              # multiplier applies above the floor
+    assert late.adjusted_risk(0.7, 3.0, 0.0) == 1.0                 # capped at certainty

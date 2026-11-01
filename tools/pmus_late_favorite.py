@@ -89,6 +89,13 @@ def safety_check(side: str, book: Book, last_long: float | None, hist, now: floa
     return None
 
 
+def adjusted_risk(rev: float, mult: float = 1.0, floor: float = 0.0) -> float:
+    """Reversal probability used for the edge test: the table's estimate scaled by `mult` and never below `floor`.
+    Live check (56 filled maker trades): 5 losses against 1.2 predicted, even the "under 1%" bucket lost 2 of 26,
+    so the table's tail is too optimistic; the floor stops it paying 0.97-0.99 for a 0.5c edge."""
+    return min(1.0, max(floor, rev * mult))
+
+
 def book_from_ws(md: dict) -> Book:
     lv = lambda rows: [(float(x["px"]["value"]), float(x["qty"])) for x in rows]  # noqa: E731
     return Book(md["marketSlug"], md.get("state", ""), sorted(lv(md.get("bids", [])), reverse=True),
@@ -299,7 +306,8 @@ class Bot:
                 why = f"margin: index price has {mv['side']} ahead (z={mv['z']:+.1f}), book favors {side}"
             else:
                 mv["ub"] = reversal_ub(mv["left"], abs(mv["z"]), mv["exact"])
-                mv["rev"] = reversal_est(mv["left"], abs(mv["z"]), mv["exact"])     # predicted loss probability, for calibration
+                mv["rev_raw"] = reversal_est(mv["left"], abs(mv["z"]), mv["exact"])     # the table's estimate, for calibration
+                mv["rev"] = adjusted_risk(mv["rev_raw"], getattr(self.a, "risk_mult", 1.0), getattr(self.a, "risk_floor", 0.0))
                 mv["risk"] = mv["rev"] if self.a.risk == "point" else mv["ub"]
                 mv["edge"] = edge_after_risk(ask, taker_fee(ask, 1.0), mv["risk"])
                 if mv["edge"] < self.a.min_edge:
@@ -430,7 +438,8 @@ class Bot:
                     if isinstance(mv, str) or mv["side"] != r["side"]:
                         why = "signal gone"
                     else:
-                        rev = reversal_est(mv["left"], abs(mv["z"]), mv["exact"])
+                        rev = adjusted_risk(reversal_est(mv["left"], abs(mv["z"]), mv["exact"]),
+                                            getattr(self.a, "risk_mult", 1.0), getattr(self.a, "risk_floor", 0.0))
                         risk = rev if self.a.risk == "point" else reversal_ub(mv["left"], abs(mv["z"]), mv["exact"])
                         if edge_after_risk(r["price"], 0.0, risk) < self.a.min_edge:
                             why = "edge gone"
@@ -548,6 +557,8 @@ def main() -> None:
     ap.add_argument("--max-drop", type=float, default=0.03, help="skip if the favorite fell this much in --drop-secs")
     ap.add_argument("--max-off-high", type=float, default=0.05, help="skip if this far below its 60s high")
     ap.add_argument("--min-edge", type=float, default=0.005, help="required worst-case profit per share (dollars)")
+    ap.add_argument("--risk-mult", type=float, default=1.0, help="multiply the table's reversal estimate by this before the edge test")
+    ap.add_argument("--risk-floor", type=float, default=0.0, help="never assume a reversal probability below this in the edge test")
     ap.add_argument("--max-attempts", type=int, default=3, help="orders per window per asset if the first expire empty")
     ap.add_argument("--max-feed-age", type=float, default=8.0, help="skip if the index price feed is older than this")
     ap.add_argument("--feed-poll", type=float, default=3.0, help="seconds between index price fetches")
