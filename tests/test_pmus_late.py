@@ -195,3 +195,73 @@ def test_loss_budget_stops_everything_when_spent_and_does_not_halt_assets(tmp_pa
 
 
 import pytest  # noqa: E402  (used by the budget test above)
+
+
+# ---- maker mode ----
+import asyncio  # noqa: E402
+
+from pm_edges.pmus import maker_price  # noqa: E402
+
+
+def test_maker_price_sits_inside_the_ask_and_never_crosses():
+    assert maker_price(0.90, 0.97, 1) == 0.96            # one tick below the ask
+    assert maker_price(0.96, 0.97, 1) == 0.96            # joins the bid when the spread is one tick
+    assert maker_price(0.96, 0.97, 3) == 0.96            # never below the bid
+    assert maker_price(0.50, 0.97, 2) == 0.95
+    assert maker_price(0.97, 0.97, 1) == 0.96            # locked/crossed book: still strictly below the ask
+
+
+class FakeTrader:
+    def __init__(self, fills):
+        self.fills, self.orders, self.cancelled, self.polls = fills, {}, [], 0
+
+    def create(self, order):
+        self.orders["O1"] = order
+        return {"id": "O1"}
+
+    def get_order(self, oid):
+        self.polls += 1
+        done = "O1" in self.cancelled
+        got = self.fills if (self.fills and (done or self.polls > 2)) else 0
+        state = "ORDER_STATE_FILLED" if got >= 0.1 else "ORDER_STATE_CANCELED" if done else "ORDER_STATE_NEW"
+        return {"state": state, "cumQuantity": got, "avgPx": {"value": "0.04"} if got else None,
+                "commissionNotionalTotalCollected": {"value": "0"}}
+
+    def cancel(self, oid, slug):
+        self.cancelled.append(oid)
+        return {}
+
+
+class MakerArgs(A):
+    maker, maker_offset, maker_cancel_secs, maker_poll = True, 1, 12.0, 0.0
+    usd, risk, min_edge, loss_budget, live = 0.10, "point", 0.005, 1.0, True
+    assets, fresh = ["btc"], True
+
+
+def mk_bot(tmp_path, fills):
+    import json as _json
+    late.STATE = tmp_path / "state.json"
+    bot = late.Bot(MakerArgs, FakeTrader(fills), None, open(tmp_path / "log.jsonl", "w"))
+    return bot
+
+
+def test_resting_down_order_is_priced_on_the_long_scale_and_fill_becomes_a_position(tmp_path):
+    bot = mk_bot(tmp_path, fills=0.10)
+    b = Book("s", "MARKET_STATE_OPEN", [(0.03, 50.0)], [(0.05, 50.0)])       # Down ask 0.97, Down bid 0.95
+    asyncio.run(bot._place_resting("btc", 1000, "slug-btc", "Down", "ORDER_INTENT_BUY_SHORT", 0.97, b, {"asset": "btc"}, 1100.0, 100.0))
+    o = bot.trader.orders["O1"]
+    assert o["tif"] == late.GTC and o["intent"] == "ORDER_INTENT_BUY_SHORT"
+    assert o["price"]["value"] == "0.04"                                       # Down at 0.96 -> long price 0.04
+    assert "btc" in bot.resting and bot.resting["btc"]["price"] == 0.96
+    for t in (1101.0, 1102.0, 1103.0, 1104.0):                                 # polls until the order reports FILLED
+        asyncio.run(bot.manage_resting(t))
+    assert "btc" not in bot.resting and "btc" in bot.pending
+    assert bot.pending["btc"]["qty"] == 0.10 and abs(bot.pending["btc"]["ask"] - 0.96) < 1e-9     # avgPx 0.04 long -> 0.96 Down
+
+
+def test_unfilled_resting_order_is_cancelled_before_the_deadline(tmp_path):
+    bot = mk_bot(tmp_path, fills=0.0)
+    b = Book("s", "MARKET_STATE_OPEN", [(0.93, 50.0)], [(0.95, 50.0)])
+    asyncio.run(bot._place_resting("btc", 1000, "slug-btc", "Up", "ORDER_INTENT_BUY_LONG", 0.95, b, {"asset": "btc"}, 1100.0, 100.0))
+    asyncio.run(bot.manage_resting(1295.0))                                    # 5 s left < 12 s cancel threshold
+    assert bot.trader.cancelled == ["O1"] and "btc" not in bot.resting and "btc" not in bot.pending

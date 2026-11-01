@@ -34,12 +34,13 @@ import httpx
 import websockets
 
 from pm_edges.margin import edge_after_risk, lead_z, max_price, reversal_est, reversal_ub, sigma_ref
-from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, taker_fee, updown_slug)
+from pm_edges.pmus import (GATEWAY, Book, Signer, Trader, event_slug, limit_order, maker_price, taker_fee, updown_slug)
 
 LOG = Path("data/pmus/late_favorite.jsonl")
 HEARTBEAT = Path("data/pmus/heartbeat")  # the dashboard reads this to show "Bot running" on any OS
 STATE = Path("data/pmus/state.json")  # survives restarts: open trades, per-asset stats, stop flag
 FOK = "TIME_IN_FORCE_FILL_OR_KILL"
+GTC = "TIME_IN_FORCE_GOOD_TILL_CANCEL"
 WS_PATH = "/v1/ws/markets"
 
 
@@ -127,6 +128,7 @@ class Bot:
         self.halted: dict[str, str] = {}                   # asset -> reason
         self.done: set[str] = set()                        # market slugs already decided
         self.pending: dict[str, dict] = {}                 # asset -> unsettled trade
+        self.resting: dict[str, dict] = {}                 # asset -> resting maker order not yet resolved
         self.stats = {a: [0, 0, 0.0] for a in args.assets}  # wins, losses, pnl
         self.spent, self.n_live = 0.0, 0
         self._hb = 0.0
@@ -139,6 +141,7 @@ class Bot:
             return
         d = json.loads(STATE.read_text())
         self.pending, self.halted, self.stop_all = d["pending"], d["halted"], d["stop_all"]
+        self.resting = d.get("resting", {})
         self.budget_pnl = d.get("budget_pnl", 0.0)
         self.stats.update({k: v for k, v in d["stats"].items() if k in self.stats})
         self.done = set(d.get("done", []))
@@ -150,7 +153,7 @@ class Bot:
         STATE.write_text(json.dumps({"pending": self.pending, "halted": self.halted, "stop_all": self.stop_all,
                                      "stats": self.stats, "done": sorted(self.done)[-40:],
                                      "spent": self.spent, "n_live": self.n_live,
-                                     "budget_pnl": self.budget_pnl}))
+                                     "budget_pnl": self.budget_pnl, "resting": self.resting}))
 
     def emit(self, rec: dict) -> None:
         self.log.write(json.dumps(rec, default=str) + "\n")
@@ -275,7 +278,7 @@ class Bot:
     async def consider(self, asset: str, start: int, now: float) -> None:
         slug = updown_slug(start, asset)
         left = start + 300 - now
-        if (self.stop_all or slug in self.done or asset in self.halted or asset in self.pending
+        if (self.stop_all or slug in self.done or asset in self.halted or asset in self.pending or asset in self.resting
                 or not self.a.t_min <= left <= self.a.t_max):
             return
         book = self.books.get(slug)
@@ -284,8 +287,8 @@ class Bot:
             return
         side, ask, depth, pv, intent = c
         why = None
-        if sum(1 for t in self.pending.values() if t.get("end") == start + 300 and t.get("side") == side) >= getattr(self.a, "max_per_window", 2):
-            why = f"correlation cap: already {getattr(self.a, "max_per_window", 2)} {side} positions open this window"   # one market-wide reversal hits them all
+        if sum(1 for t in (*self.pending.values(), *self.resting.values()) if t.get("end") == start + 300 and t.get("side") == side) >= getattr(self.a, "max_per_window", 2):
+            why = f"correlation cap: already {getattr(self.a, 'max_per_window', 2)} {side} positions open this window"   # one market-wide reversal hits them all
         why = why or safety_check(side, book, self.last.get(slug), self.hist.get(slug, []), now, self.a)
         mv = None
         if not why:   # the book looks sane: now check the index price agrees and the lead is big enough for the time left
@@ -328,6 +331,9 @@ class Bot:
             if self.n_live >= self.a.max_trades or self.spent + self.a.usd > self.a.max_spend:
                 self.say("  live caps reached; not trading")
                 return
+            if getattr(self.a, "maker", False):
+                await self._place_resting(asset, start, slug, side, intent, ask, book, rec, now, left)
+                return
             # Offers flicker (one vanished within 50 ms of our order), so a limit one cent past the quote misses.
             # An IOC order pays only what is actually offered, so allow up to the highest price that still clears
             # the edge rule: price improvement is kept, and we never pay more than the model says is worth it.
@@ -368,6 +374,97 @@ class Bot:
             self.pending[asset] = trade
         self.save_state()
         self.emit(rec)
+
+    # -- maker mode: rest a limit buy just inside the ask instead of crossing the spread -------------------
+    async def _place_resting(self, asset, start, slug, side, intent, ask, book, rec, now, left) -> None:
+        own_bid = book.bids[0][0] if side == "Up" else round(1 - book.offers[0][0], 4)
+        p = maker_price(own_bid, ask, self.a.maker_offset)
+        qty = math.floor(self.a.usd / p * 100) / 100
+        if qty < 0.01:
+            self.say(f"  {asset} maker size too small; skip")
+            return
+        long_px = p if intent.endswith("LONG") else round(1 - p, 2)
+        order = limit_order(slug, intent, long_px, qty, GTC)
+        order["synchronousExecution"] = False
+        order.pop("maxBlockTime", None)
+        self.say(f"  {asset} RESTING BUY {side} {qty} @ {p:.2f} (ask {ask:.2f}, bid {own_bid:.2f}); cancel at T-{self.a.maker_cancel_secs:g}s")
+        try:
+            res = await asyncio.get_running_loop().run_in_executor(None, self.trader.create, order)
+        except Exception as e:
+            rec["error"] = str(e)
+            self.halted[asset] = "unconfirmed order; check the app"
+            self.say(f"  {asset} ORDER ERROR (asset HALTED): {e}")
+            self.emit(rec)
+            return
+        self.resting[asset] = {"id": res["id"], "slug": slug, "ev": event_slug(start, asset), "end": start + 300, "side": side,
+                               "intent": intent, "price": p, "qty": qty, "ask0": ask, "placed": now, "left0": round(left),
+                               "next_poll": now + 1.0, "rec": rec}
+        self.save_state()
+
+    async def manage_resting(self, now: float) -> None:
+        loop = asyncio.get_running_loop()
+        for asset, r in list(self.resting.items()):
+            if now < r["next_poll"]:
+                continue
+            r["next_poll"] = now + self.a.maker_poll
+            left = r["end"] - now
+            try:
+                o = await loop.run_in_executor(None, self.trader.get_order, r["id"])
+            except Exception as e:
+                r["errs"] = r.get("errs", 0) + 1
+                self.say(f"  {asset} resting order unreadable ({r['errs']}): {e}")
+                if r["errs"] >= 6:
+                    self.halted[asset] = "unreadable resting order; check the app"
+                    del self.resting[asset]
+                    self.save_state()
+                continue
+            live = o.get("state") in ("ORDER_STATE_NEW", "ORDER_STATE_PENDING_NEW", "ORDER_STATE_PARTIALLY_FILLED")
+            why = "filled" if not live else None
+            if live:
+                if self.stop_all:
+                    why = "stop"
+                elif left <= self.a.maker_cancel_secs:
+                    why = "deadline"
+                else:
+                    mv = self.margin_view(asset, r["end"] - 300, now)
+                    if isinstance(mv, str) or mv["side"] != r["side"]:
+                        why = "signal gone"
+                    else:
+                        rev = reversal_est(mv["left"], abs(mv["z"]), mv["exact"])
+                        risk = rev if self.a.risk == "point" else reversal_ub(mv["left"], abs(mv["z"]), mv["exact"])
+                        if edge_after_risk(r["price"], 0.0, risk) < self.a.min_edge:
+                            why = "edge gone"
+            if live and why:
+                try:
+                    await loop.run_in_executor(None, self.trader.cancel, r["id"], r["slug"])
+                except Exception as e:
+                    self.say(f"  {asset} cancel error (re-reading the order): {e}")
+                await asyncio.sleep(0.3)
+                try:
+                    o = await loop.run_in_executor(None, self.trader.get_order, r["id"])
+                except Exception as e:
+                    self.say(f"  {asset} order unreadable after cancel: {e}")
+                    continue
+            if why is None:
+                continue
+            got = float(o.get("cumQuantity") or 0)
+            px = float((o.get("avgPx") or {}).get("value") or 0)
+            px = r["price"] if px <= 0 else px if r["intent"].endswith("LONG") else 1 - px
+            comm = float((o.get("commissionNotionalTotalCollected") or {}).get("value") or 0)
+            rec = r["rec"]
+            rec["order"] = o
+            rec["maker"] = {"price": r["price"], "ask_at_post": r["ask0"], "left_at_post": r["left0"], "filled": got,
+                            "end_state": o.get("state"), "ended_by": why, "secs_resting": round(now - r["placed"])}
+            self.say(f"  {asset} {r['slug'][-6:]} resting order ended ({why}): filled {got} of {r['qty']} @ {px:.4f} fee {comm:.4f} "
+                     f"after {now - r['placed']:.0f}s")
+            if got > 0:
+                self.spent += got * px
+                self.n_live += 1
+                self.pending[asset] = {"slug": r["slug"], "ev": r["ev"], "end": r["end"], "side": r["side"], "ask": px,
+                                       "qty": got, "fee": comm, "next_check": r["end"] + 20}
+            del self.resting[asset]
+            self.emit(rec)
+            self.save_state()
 
     # -- stream --------------------------------------------------------------
     async def run(self) -> None:
@@ -415,13 +512,15 @@ class Bot:
                                     self.ptb_busy = True
                                     asyncio.create_task(self._poll_ptb(a_, start))
                                     break
+                        if self.resting:
+                            await self.manage_resting(now)
                         for asset in self.a.assets:
                             await self.consider(asset, start, now)
                         self.settle(now)
                         if now - self._hb > 5:
                             HEARTBEAT.write_text(str(now))
                             self._hb = now
-                        if self.a.live and not self.pending and (
+                        if self.a.live and not self.pending and not self.resting and (
                                 self.stop_all
                                 or len(self.halted) == len(self.a.assets)
                                 or self.n_live >= self.a.max_trades):
@@ -454,6 +553,10 @@ def main() -> None:
     ap.add_argument("--feed-poll", type=float, default=3.0, help="seconds between index price fetches")
     ap.add_argument("--t-min", type=float, default=15.0, help="stop looking this many seconds before the end")
     ap.add_argument("--max-per-window", type=int, default=2, help="max same-side open positions across assets in one window (they reverse together)")
+    ap.add_argument("--maker", action="store_true", help="rest a limit buy inside the ask (no taker fee, better price) instead of an IOC order")
+    ap.add_argument("--maker-offset", type=int, default=1, help="ticks below the ask for the resting price (never below the bid)")
+    ap.add_argument("--maker-cancel-secs", type=float, default=12.0, help="cancel an unfilled resting order this many seconds before the end")
+    ap.add_argument("--maker-poll", type=float, default=1.0, help="seconds between resting-order status checks")
     ap.add_argument("--max-trades", type=int, default=60, help="live: stop after this many filled orders")
     ap.add_argument("--max-spend", type=float, default=100.0, help="live: stop after this much total stake")
     ap.add_argument("--hours", type=float, default=2.0)

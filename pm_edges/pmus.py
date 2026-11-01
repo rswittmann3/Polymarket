@@ -117,8 +117,22 @@ class Trader:
             raise RuntimeError(f"order {order_id} not readable after {tries} tries; check the app before assuming it did not fill")
         return o
 
+    def get_order(self, order_id: str) -> dict:
+        return self._call("GET", f"/v1/order/{order_id}")["order"]
+
+    def cancel(self, order_id: str, slug: str) -> dict:
+        """Cancel a resting order (verified: POST /v1/order/{id}/cancel with the market slug returns {})."""
+        return self._call("POST", f"/v1/order/{order_id}/cancel", {"marketSlug": slug})
+
     def close_position(self, slug: str) -> dict:
         return self._call("POST", "/v1/order/close-position", {"marketSlug": slug})
+
+
+def maker_price(own_bid: float, own_ask: float, offset_ticks: int = 1, tick: float = 0.01) -> float:
+    """Resting-buy price on the side's own scale: `offset_ticks` below its ask, but never below its bid (join the
+    bid instead) and always strictly below the ask so the order cannot cross and become a taker."""
+    p = max(own_bid, own_ask - offset_ticks * tick)
+    return round(min(p, own_ask - tick), 2)
 
 
 def limit_order(slug: str, intent: str, price: float, qty: float, tif: str) -> dict:
