@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REC = "data/us_all/rec-*.jsonl"
-EVENTS = Path("/tmp/claude-0/bt/us_events_all.json")      # slug -> scheduled end; refreshed by refresh_events()
+EVENTS = Path("data/us_all/events.json")                  # all active events with their markets; refreshed by `refresh`
 SIGNALS = Path("data/us_all/signals.jsonl")
 HORIZONS = [1, 3, 7, 14, 30]
 
@@ -104,6 +104,28 @@ def scan(a) -> None:
     print(f"{n} new signals ({len(series)} markets with data)")
 
 
+def refresh(a) -> None:
+    import httpx
+    from pm_edges.pmus import GATEWAY
+    http, evs, off = httpx.Client(timeout=40), [], 0
+    while True:
+        for _ in range(6):
+            r = http.get(f"{GATEWAY}/v1/events", params={"limit": 200, "offset": off, "active": "true", "closed": "false"})
+            if r.status_code == 429:
+                time.sleep(11)
+                continue
+            break
+        batch = r.json().get("events", []) if r.status_code == 200 else []
+        if not batch:
+            break
+        evs += batch
+        off += 200
+        time.sleep(2.2)
+    if evs:
+        EVENTS.write_text(json.dumps(evs))
+    print(f"refreshed {len(evs)} events")
+
+
 def track(a) -> None:
     if not SIGNALS.exists():
         print("no signals yet")
@@ -131,11 +153,11 @@ def track(a) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["scan", "track"])
+    ap.add_argument("cmd", choices=["scan", "track", "refresh"])
     ap.add_argument("--window", type=float, default=24.0)
     ap.add_argument("--rise", type=float, default=0.12)
     ap.add_argument("--min-days", type=float, default=60.0)
     ap.add_argument("--max-spread", type=float, default=0.05)
     ap.add_argument("--dry", action="store_true")
     a = ap.parse_args()
-    scan(a) if a.cmd == "scan" else track(a)
+    {"scan": scan, "track": track, "refresh": refresh}[a.cmd](a)
