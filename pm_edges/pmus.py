@@ -135,8 +135,14 @@ def maker_price(own_bid: float, own_ask: float, offset_ticks: int = 1, tick: flo
     return round(min(p, own_ask - tick), 2)
 
 
+def fmt_price(price: float) -> str:
+    """Two decimals normally, three for the 0.001-tick futures markets (e.g. 0.406); never more."""
+    s = f"{price:.3f}"
+    return s[:-1] if s.endswith("0") else s
+
+
 def limit_order(slug: str, intent: str, price: float, qty: float, tif: str) -> dict:
     return {"marketSlug": slug, "intent": intent, "type": "ORDER_TYPE_LIMIT",
-            "price": {"value": f"{price:.2f}", "currency": "USD"}, "quantity": qty, "tif": tif,
+            "price": {"value": fmt_price(price), "currency": "USD"}, "quantity": qty, "tif": tif,
             "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_AUTOMATIC",
             "synchronousExecution": True, "maxBlockTime": "5"}

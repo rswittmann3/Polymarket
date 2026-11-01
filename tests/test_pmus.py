@@ -79,3 +79,8 @@ def test_slugs_per_asset():
     assert updown_slug(1793294700, "eth") == "cpceth-eth-updown-5m-2026-10-29-1725z"
     assert updown_slug(1793294700, "xrp") == "cpcxrp-xrp-updown-5m-2026-10-29-1725z"
     assert event_slug(1793294700, "sol") == "sol-updown-5m-2026-10-29-1725z"
+
+
+def test_fmt_price_keeps_two_decimals_unless_the_tick_needs_three():
+    from pm_edges.pmus import fmt_price
+    assert fmt_price(0.96) == "0.96" and fmt_price(0.5) == "0.50" and fmt_price(0.406) == "0.406" and fmt_price(0.4060000001) == "0.406"
