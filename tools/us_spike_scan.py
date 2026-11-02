@@ -72,11 +72,11 @@ def scan(a) -> None:
     now = time.time()
     series = load_series(now - (a.window + 30) * 3600)
     ends = sched_end()
-    seen = set()
+    last_sig: dict[str, float] = {}                       # slug -> time of its latest signal
     if SIGNALS.exists():
         for line in SIGNALS.open():
             r = json.loads(line)
-            seen.add((r["slug"], r["day"]))
+            last_sig[r["slug"]] = max(last_sig.get(r["slug"], 0), r["t"])
     n = 0
     for slug, s in series.items():
         if slug not in ends or len(s) < 3:
@@ -91,7 +91,7 @@ def scan(a) -> None:
         if past is None or not (0.10 <= mid <= 0.90) or mid - past < a.rise:
             continue
         day = datetime.fromtimestamp(now, timezone.utc).strftime("%Y%m%d")
-        if (slug, day) in seen:
+        if now - last_sig.get(slug, 0) < 7 * 86400:          # same spacing as the 12h-history backtest (one episode per market per week)
             continue
         sig = {"slug": slug, "ev": ev, "t": round(now), "day": day, "yes_bid": bid, "yes_ask": ask, "past_mid": round(past, 4), "rise": round(mid - past, 4),
                "no_ask": round(1 - bid, 4), "days_to_end": round((end - now) / 86400), "window_h": a.window}
@@ -134,6 +134,7 @@ def track(a) -> None:
     series = load_series(min(s["t"] for s in sigs) - 3600)
     now = time.time()
     rows = defaultdict(list)
+    clus = defaultdict(lambda: defaultdict(list))         # horizon -> (day, sport/category) -> moves
     for sg in sigs:
         s = series.get(sg["slug"], [])
         for h in HORIZONS:
@@ -143,12 +144,16 @@ def track(a) -> None:
             mid = mid_at(s, t)
             if mid is None:
                 continue
-            rows[h].append((1 - mid) - sg["no_ask"])        # NO value at the horizon (mid) minus the executable entry price
+            mv = (1 - mid) - sg["no_ask"]                   # NO value at the horizon (mid) minus the executable entry price
+            rows[h].append(mv)
+            clus[h][(sg["day"], sg["ev"].split("-")[0])].append(mv)
     print(f"{len(sigs)} signals")
     for h in HORIZONS:
         v = rows.get(h, [])
         if v:
-            print(f"  +{h:2d}d: n={len(v):3d} mean NO move (mid vs entry ask, i.e. before exit costs) {sum(v) / len(v) * 100:+.2f}c")
+            cm = [sum(x) / len(x) for x in clus[h].values()]
+            print(f"  +{h:2d}d: n={len(v):3d} mean NO move (mid vs entry ask, i.e. before exit costs) {sum(v) / len(v) * 100:+.2f}c"
+                  f"   | {len(cm)} independent clusters (day x category): mean of cluster means {sum(cm) / len(cm) * 100:+.2f}c")
 
 
 if __name__ == "__main__":
