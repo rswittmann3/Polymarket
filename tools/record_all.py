@@ -30,13 +30,18 @@ def list_slugs(min_mid: float, max_mid: float) -> list[str]:
     http = httpx.Client(timeout=40)
     slugs, off = [], 0
     while True:
+        r = None
         for _ in range(6):
-            r = http.get(f"{GATEWAY}/v1/events", params={"limit": 200, "offset": off, "active": "true", "closed": "false"})
+            try:
+                r = http.get(f"{GATEWAY}/v1/events", params={"limit": 200, "offset": off, "active": "true", "closed": "false"})
+            except httpx.HTTPError:      # connection reset / timeout: back off and retry instead of killing the recorder
+                time.sleep(5)
+                continue
             if r.status_code == 429:
                 time.sleep(11)
                 continue
             break
-        if r.status_code != 200:
+        if r is None or r.status_code != 200:
             break
         evs = r.json().get("events", [])
         if not evs:
@@ -59,6 +64,10 @@ async def run(hours: float, quote_secs: float, lo: float, hi: float) -> None:
     stop = time.time() + hours * 3600
     while time.time() < stop:
         slugs = await asyncio.get_running_loop().run_in_executor(None, list_slugs, lo, hi)
+        if len(slugs) < 1000:
+            print(f"[{datetime.now(timezone.utc):%H:%M:%S}] market listing incomplete ({len(slugs)}); retrying in 60s", flush=True)
+            await asyncio.sleep(60)
+            continue
         print(f"[{datetime.now(timezone.utc):%H:%M:%S}] subscribing to {len(slugs)} markets", flush=True)
         last: dict[str, tuple] = {}
         last_row_t: dict[str, float] = {}
