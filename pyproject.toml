@@ -19,12 +19,15 @@ dev = ["pytest>=8"]
 history = ["pandas>=2", "lxml", "numpy"]
 # walk-forward models (tools/run_model.py)
 model = ["pandas>=2", "lxml", "numpy", "scikit-learn>=1.4"]
+# Novig recorder / signing / dry-run quote engine (novig_mm)
+novig = ["cryptography>=42", "websockets>=12"]
 
 [project.scripts]
 pm_edges = "pm_edges.cli:main"
+novig_mm = "novig_mm.cli:main"
 
 [tool.setuptools]
-packages = ["pm_edges"]
+packages = ["pm_edges", "novig_mm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

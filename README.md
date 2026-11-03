@@ -302,3 +302,29 @@ python tools/lag_study.py      # after some games: Polymarket vs Pinnacle lead-l
 ## Daily forward test of the NBA line-move models
 
 The honest check on a backtest is predictions made before the games. `tools/freeze_predictions.py` fits the two open-to-close models, predicts the closing total and spread for every upcoming NBA game from ESPN's opening line, and writes `snapshots/frozen/nba_<time>.json` (never edited afterwards). `tools/score_frozen.py` scores every frozen game that has tipped against where the line closed (Pinnacle from the poller timeline when present, otherwise ESPN's DraftKings final line), keeping a game's first prediction, and reports the closing-line value in points measured from the opening line and from the line at prediction time. A daily scheduled task runs both and commits the frozen files; the Model Lab dashboard has a "Forward test" card. After about 40 games the result should be decisive either way.
+
+
+## Novig market-making research kit (`novig_mm`)
+
+Read-only. It records Novig's order-book touch, joins it with Novig's public trade files, and prints the quotes a
+post-only strategy *would* post. **It has no order, cancel or transfer code at all.**
+
+```bash
+pip install -e ".[novig,history]"        # cryptography + websockets; pandas/numpy for `flow`
+novig_mm check --league NBA              # public catalog reachable? with keys set, also verifies your signature via /v3/echo
+novig_mm record --leagues NBA,NFL,NCAAB,NHL --interval 20     # leave running for days; writes data/novig/touch_<date>.jsonl.gz
+novig_mm report                          # spreads and touch depth by league/type/main-vs-alt line/time to start
+novig_mm flow --trades-dir <dir> --days 3   # maker result by game phase (needs recorded touches + data.novig.com trades.csv)
+novig_mm quotes --league NBA --fair fair.csv   # DRY RUN quotes; fair.csv = outcome_id,fair[,sd]
+```
+
+- Public routes (`/v3/public/catalog/...`) need no key, are CDN-cached about 15 s and throttled per IP.
+- Keys (optional, for `check` only): `NOVIG_HOST`, `NOVIG_KEY_ID`, `NOVIG_PEM` (path to an unencrypted PKCS#8 PEM) in `.env`.
+  Use the **paper** host (`https://api.paper.novig.com`) first. Never paste keys into chats or commit them.
+- Production requires an identity and location check, so run it from your own machine or VPS in an eligible state,
+  not from a cloud sandbox.
+- Fees (docs.novig.com/api/concepts/fees.md): pre-game fills are free for both sides. Live game fills and all
+  eligible futures fills charge the taker `0.06*P*(1-P)` per $1 contract; the maker credit is 25% (live) or 50%
+  (futures) of that. Every `GOLIVE` cancels all resting orders. Read `fee` from each market rather than hardcoding.
+- `quoter.make_quotes` is a pure function (fair, inventory, minutes to start -> post-only buys on the price grid, clamped
+  so they never cross); `quoter.apply_trade` replays historical trades against a resting order (price priority, queue).
