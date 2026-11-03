@@ -315,9 +315,19 @@ novig_mm check --league NBA              # public catalog reachable? with keys s
 novig_mm record --leagues NBA,NFL,NCAAB,NHL --interval 20     # leave running for days; writes data/novig/touch_<date>.jsonl.gz
 novig_mm report                          # spreads and touch depth by league/type/main-vs-alt line/time to start
 novig_mm flow --trades-dir <dir> --days 3   # maker result by game phase (needs recorded touches + data.novig.com trades.csv)
+novig_mm lean                            # test the frozen NBA line-move predictions against Novig's own prices (see below)
 novig_mm quotes --league NBA --fair fair.csv   # DRY RUN quotes; fair.csv = outcome_id,fair[,sd]
 ```
 
+- `record` writes a market only when its touch changed or every `--heartbeat` seconds (default 120), about 90% less data
+  than logging every poll; a market's state persists until its next row. It also writes `meta_<date>.jsonl.gz`
+  (event and outcome names). For the lean test run `novig_mm record --leagues NBA --types TOTAL,SPREAD --interval 20
+  --window-hours 36` continuously: it must be running when `tools/freeze_predictions.py` saves (about 13:15 UTC) and until
+  the games start.
+- `lean` pairs each frozen NBA prediction with the Novig market at the line it was made on, buys the side the model leans
+  toward at the save time and exits `--exit-buffer` minutes before the start. It reports the move (`gross`), the result
+  crossing the spread both ways (`taker`) and filling at the entry bid (`maker`, optimistic) in cents per contract.
+  About 40 games per market type are needed before the standard errors mean anything.
 - Public routes (`/v3/public/catalog/...`) need no key, are CDN-cached about 15 s and throttled per IP.
 - Keys (optional, for `check` only): `NOVIG_HOST`, `NOVIG_KEY_ID`, `NOVIG_PEM` (path to an unencrypted PKCS#8 PEM) in `.env`.
   Use the **paper** host (`https://api.paper.novig.com`) first. Never paste keys into chats or commit them.

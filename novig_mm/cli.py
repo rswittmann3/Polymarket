@@ -41,7 +41,7 @@ def cmd_check(a) -> int:
 def cmd_record(a) -> int:
     c = NovigClient(load_config())
     recorder.run(c, [x.strip().upper() for x in a.leagues.split(",")], a.types, a.interval, a.duration,
-                 a.window_hours, Path(a.out))
+                 a.window_hours, Path(a.out), heartbeat_s=a.heartbeat)
     return 0
 
 
@@ -75,6 +75,40 @@ def cmd_flow(a) -> int:
     for _, r in s.iterrows():
         t.add_row(*[str(r[c]) for c in s.columns])
     console.print(t)
+    return 0
+
+
+def cmd_lean(a) -> int:
+    from collections import Counter
+    from . import lean
+    d = Path(a.touch_dir)
+    touch, meta = sorted(d.glob("touch_*.jsonl.gz")), sorted(d.glob("meta_*.jsonl.gz"))
+    frozen = sorted(Path(a.frozen_dir).glob("nba_*.json"))
+    if not (touch and meta and frozen):
+        console.print(f"need touch_*.jsonl.gz + meta_*.jsonl.gz in {d} (run `novig_mm record --leagues NBA`) and frozen "
+                      f"predictions in {a.frozen_dir}: found {len(touch)} touch, {len(meta)} meta, {len(frozen)} frozen files")
+        return 1
+    rows, skips = lean.evaluate(frozen, touch, meta, a.exit_buffer, a.max_age)
+    if not rows:
+        console.print("no testable bets yet. Skipped: " + str(dict(Counter(s["why"] for s in skips))))
+        return 1
+    t = Table(title="NBA line-move lean in Novig prices, cents per contract (+ = made money). "
+                    "taker = cross the spread both ways; maker = fill at the entry bid (optimistic)")
+    summ = lean.summarize(rows)
+    for col in summ[0]:
+        t.add_column(col, justify="left" if col == "kind" else "right")
+    for r in summ:
+        t.add_row(*[str(r[c]) for c in summ[0]])
+    console.print(t)
+    console.print("skipped: " + str(dict(Counter(s["why"] for s in skips))))
+    if a.out:
+        import csv as _csv
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        with open(a.out, "w", newline="") as f:
+            w = _csv.DictWriter(f, fieldnames=list(rows[0]))
+            w.writeheader()
+            w.writerows(rows)
+        console.print(f"per-bet results: {a.out}")
     return 0
 
 
@@ -146,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--interval", type=float, default=30.0, help="seconds between polls (CDN caches ~15 s)")
     p.add_argument("--duration", type=float, default=None, help="stop after this many seconds (default: run until Ctrl-C)")
     p.add_argument("--window-hours", type=float, default=24.0, help="only events starting within this many hours")
+    p.add_argument("--heartbeat", type=float, default=120.0,
+                   help="write a market only when its touch changed, or at least this often (0 = every poll; ~10x more data)")
     p.add_argument("--out", default="data/novig")
     p.set_defaults(fn=cmd_record)
 
@@ -159,6 +195,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=None, help="use only the newest N trade files")
     p.add_argument("--horizon", type=int, choices=[60, 300], default=300, help="seconds after the trade")
     p.set_defaults(fn=cmd_flow)
+
+    p = sub.add_parser("lean", help="test the frozen NBA line-move predictions against Novig's own prices")
+    p.add_argument("--touch-dir", default="data/novig")
+    p.add_argument("--frozen-dir", default="snapshots/frozen")
+    p.add_argument("--exit-buffer", type=float, default=5.0, help="minutes before the scheduled start at which the position is closed")
+    p.add_argument("--max-age", type=float, default=10.0, help="skip if the nearest recorded state is older than this (minutes)")
+    p.add_argument("--out", default="data/novig/lean_results.csv")
+    p.set_defaults(fn=cmd_lean)
 
     p = sub.add_parser("quotes", help="DRY RUN: print the quotes the engine would post")
     p.add_argument("--league", default="NBA")

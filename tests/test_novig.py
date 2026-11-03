@@ -352,3 +352,95 @@ def test_poll_once_uses_window_and_types(tmp_path):
     assert seen[0]["marketType"] == "MONEY,SPREAD" and seen[0]["eventStatus"] == "OPEN_PREGAME"
     assert int(seen[0]["startsBefore"]) == 1_793_840_000_000 + 12 * 3600_000
     assert list(tmp_path.glob("touch_*.jsonl.gz"))
+
+
+# ---------------------------------------------------------------- lean (frozen predictions vs Novig prices)
+def _lean_fixture(tmp_path, entry_age_min=1.0):
+    from datetime import datetime, timezone
+    ms = lambda s: int(datetime.fromisoformat(s).replace(tzinfo=timezone.utc).timestamp() * 1000)
+    kick, saved = "2026-11-04T03:30:00", "2026-11-03T13:00:00"
+    start = ms(kick)
+    frozen = {"saved_at": saved + "+00:00", "games": [
+        {"away": "MIA", "home": "LAC", "date": "2026-11-03", "kickoff": kick + "+00:00", "total": 240.5, "total_open": 239.5,
+         "home_spread": -1.5, "home_spread_open": -1.0, "pred_close_total": 242.0, "pred_close_spread": -3.0},
+        {"away": "BOS", "home": "NYK", "date": "2026-11-03", "kickoff": kick + "+00:00", "total": 220.5, "total_open": 220.5,
+         "home_spread": -2.5, "home_spread_open": -2.5, "pred_close_total": 219.0, "pred_close_spread": -2.5}]}
+    fdir = tmp_path / "frozen"; fdir.mkdir()
+    (fdir / "nba_x.json").write_text(json.dumps(frozen))
+    meta = [{"k": "ev", "e": "E1", "lg": "NBA", "d": "Miami Heat @ Los Angeles Clippers", "st": start},
+            {"k": "mk", "m": "T240", "e": "E1", "d": "MIA @ LAC t240.5", "mt": "TOTAL", "s": "240.5", "n": ["Over 240.5", "Under 240.5"]},
+            {"k": "mk", "m": "T241", "e": "E1", "d": "MIA @ LAC t241.5", "mt": "TOTAL", "s": "241.5", "n": ["Over 241.5", "Under 241.5"]},
+            {"k": "mk", "m": "S15", "e": "E1", "d": "LAC -1.5", "mt": "SPREAD", "s": "-1.5", "n": ["LAC -1.5", "MIA +1.5"]}]
+    t_entry, t_exit = ms(saved) - int(entry_age_min * 60_000), start - 6 * 60_000
+    row = lambda m, mt, ts, b0, b1: {"ts": ts, "m": m, "e": "E1", "lg": "NBA", "mt": mt, "k": None, "st": start, "ch": "WHEN_LIVE",
+                                      "vol": 0, "oi": 0, "b": [b0, b1], "q": [100, 100], "o": ["x", "y"]}
+    touch = [row("T240", "TOTAL", t_entry, "0.48", "0.50"), row("T240", "TOTAL", t_exit, "0.52", "0.46"),
+             row("T241", "TOTAL", t_entry, "0.40", "0.40"),
+             row("S15", "SPREAD", t_entry, "0.49", "0.49"), row("S15", "SPREAD", t_exit, "0.55", "0.43")]
+    d = tmp_path / "novig"
+    recorder.append_rows(d / "touch_2026-11-03.jsonl.gz", touch)
+    recorder.append_rows(d / "meta_2026-11-03.jsonl.gz", meta)
+    return sorted(fdir.glob("*.json")), sorted(d.glob("touch_*")), sorted(d.glob("meta_*"))
+
+
+def test_lean_numbers_and_skips(tmp_path):
+    from novig_mm import lean
+    frozen, touch, meta = _lean_fixture(tmp_path)
+    rows, skips = lean.evaluate(frozen, touch, meta)
+    by = {r["kind"]: r for r in rows}
+    assert set(by) == {"total", "spread"}
+    t = by["total"]                                   # predicted close 242 > 240.5: buy Over at 240.5 (index 0)
+    assert t["side"] == "Over 240.5"
+    assert t["entry_bid"] == 0.48 and t["entry_ask"] == pytest.approx(0.50) and t["exit_bid"] == 0.52
+    assert t["gross_c"] == pytest.approx(4.0)         # mid .49 -> .53
+    assert t["taker_c"] == pytest.approx(2.0)         # sell at .52 after buying at .50
+    assert t["maker_c"] == pytest.approx(4.0)         # filled at .48, out at .52
+    s = by["spread"]                                  # predicted -3.0 < -1.5: buy the home side at -1.5 (index 0)
+    assert s["side"] == "LAC -1.5"
+    assert s["gross_c"] == pytest.approx(6.0) and s["taker_c"] == pytest.approx(4.0) and s["maker_c"] == pytest.approx(6.0)
+    assert s["spread_in_c"] == pytest.approx(2.0)
+    whys = {x["why"] for x in skips}
+    assert "no matching Novig event recorded" in whys                                  # BOS@NYK has no recorded event
+    summ = {r["kind"]: r for r in lean.summarize(rows)}
+    assert summ["all"]["bets"] == 2 and summ["all"]["gross_c"] == pytest.approx(5.0) and summ["total"]["bets"] == 1
+
+
+def test_lean_skips_stale_entry_and_unknown_strike(tmp_path):
+    from novig_mm import lean
+    frozen, touch, meta = _lean_fixture(tmp_path, entry_age_min=30)                    # last row 30 min before the save: too old
+    rows, skips = lean.evaluate(frozen, touch, meta, max_age_min=10)
+    assert rows == [] and any("no usable entry/exit" in s["why"] for s in skips)
+    d = json.loads(frozen[0].read_text()); d["games"][0]["total"] = 999.5
+    frozen[0].write_text(json.dumps(d))
+    _, skips = lean.evaluate(frozen, touch, meta, max_age_min=60)
+    assert any("no Novig total market at 999.5" in s["why"] for s in skips)
+
+
+def test_event_teams_and_matching():
+    from novig_mm import lean
+    assert lean.event_teams("Miami Heat @ Los Angeles Clippers") == ("MIA", "LAC")
+    assert lean.event_teams("New York Knicks @ Golden State Warriors") == ("NYK", "GSW")
+    assert lean.event_teams("not a game") is None
+
+
+def test_recorder_dedupe_and_meta(tmp_path):
+    m = mkt(starts=1_793_850_000_000)
+    calls = []
+
+    def h(req: httpx.Request):
+        calls.append(req.url.path)
+        if req.url.path.endswith("/events"):
+            return httpx.Response(200, json={"items": [{"eventId": "e1", "description": "A @ B", "startsTs": 1_793_850_000_000}]})
+        return httpx.Response(200, json={"items": [m]})
+
+    c = client(h)
+    last, seen = {}, set()
+    n1 = recorder.poll_once(c, ["NBA"], "MONEY", 12, tmp_path, 1_793_840_000_000, seen, True, last, 120)
+    n2 = recorder.poll_once(c, ["NBA"], "MONEY", 12, tmp_path, 1_793_840_030_000, seen, False, last, 120)     # unchanged, 30 s later
+    m["outcomes"][0]["bid"]["price"] = "0.46"
+    n3 = recorder.poll_once(c, ["NBA"], "MONEY", 12, tmp_path, 1_793_840_060_000, seen, False, last, 120)     # touch changed
+    n4 = recorder.poll_once(c, ["NBA"], "MONEY", 12, tmp_path, 1_793_840_200_000, seen, False, last, 120)     # unchanged but heartbeat due
+    assert (n1, n2, n3, n4) == (1, 0, 1, 1)
+    meta = list(analyze.read_rows(tmp_path.glob("meta_*.jsonl.gz")))
+    assert [r["k"] for r in meta] == ["mk", "ev"] and meta[0]["n"] == ["X", "Y"] and meta[1]["d"] == "A @ B"
+    assert len(meta) == 2                                                      # market meta written once, not per poll
