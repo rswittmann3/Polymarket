@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -50,6 +51,13 @@ def sched_end() -> dict[str, tuple[float, str]]:
                 end = datetime.fromisoformat(m["endDate"].replace("Z", "+00:00")).timestamp()
             except Exception:
                 continue
+            # Several market types carry their real resolution date in the slug (e.g. an election on 2026-11-03 whose
+            # metadata endDate is the certification date months later). Use the earliest date we can see.
+            for y, mo, dy in re.findall(r"(20\d\d)-(\d\d)-(\d\d)", m["slug"]):
+                try:
+                    end = min(end, datetime(int(y), int(mo), int(dy), tzinfo=timezone.utc).timestamp() + 86400)
+                except ValueError:
+                    pass
             d[m["slug"]] = (end, e.get("slug") or m["slug"])
     return d
 

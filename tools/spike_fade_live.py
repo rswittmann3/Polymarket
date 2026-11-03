@@ -29,6 +29,7 @@ from pathlib import Path
 import httpx
 
 from pm_edges.pmus import Signer, Trader, get_book, limit_order, taker_fee
+from us_spike_scan import sched_end
 
 STATE = Path("data/us_all/live_trial.json")
 SIGNALS = Path("data/us_all/signals.jsonl")
@@ -37,7 +38,20 @@ MAX_POSITIONS = 5
 MAX_TOTAL_USD = 5.0
 MAX_SPREAD = 0.02          # long-side bid-ask
 MIN_TOUCH_MULT = 1.5       # shares at the best bid must be >= this x the shares we want
+MIN_DAYS = 60              # earliest resolution date (slug date or metadata end) must be at least this far away
 MIN_SPIKE_LEFT = 0.08      # YES mid must still be at least this far above its level 24h before the signal
+
+
+def book_with_retry(http, slug):
+    """The public gateway allows ~5 requests / 10 s; back off on 429 instead of crashing."""
+    for k in range(6):
+        try:
+            return get_book(http, slug)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 429:
+                raise
+            time.sleep(6 + 4 * k)
+    raise RuntimeError(f"book for {slug} still rate limited")
 
 
 def load_state() -> dict:
@@ -92,8 +106,11 @@ def enter(a) -> None:
     if any(p["slug"] == a.slug or p["ev"] == sig["ev"] for p in open_pos):
         sys.exit("already have a position in that market/event")
 
+    end = sched_end().get(a.slug)
+    if end is None or end[0] - time.time() < MIN_DAYS * 86400:
+        sys.exit(f"REFUSED: resolves in {((end[0] - time.time()) / 86400) if end else float('nan'):.1f} days (< {MIN_DAYS})")
     with httpx.Client(timeout=15.0) as http:
-        book = get_book(http, a.slug)
+        book = book_with_retry(http, a.slug)
     if not book or not book.open or not book.bids or not book.offers:
         sys.exit("book missing or not open")
     bid, ask = book.bids[0][0], book.offers[0][0]
@@ -149,7 +166,7 @@ def status(_a) -> None:
                 print(f"  {p['slug']}: no fill ({p.get('error') or p.get('state')})")
                 continue
             time.sleep(2.1)
-            b = get_book(http, p["slug"])
+            b = book_with_retry(http, p["slug"])
             if not b or not b.open:
                 print(f"  {p['slug']}: book {'missing' if not b else b.state}: market may have resolved, CHECK THE APP; cost ${p['cost']:.3f}")
                 continue
