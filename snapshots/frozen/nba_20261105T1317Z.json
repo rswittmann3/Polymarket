@@ -1,0 +1,34 @@
+{
+ "saved_at": "2026-11-05T13:17:02+00:00",
+ "history_through": "2026-11-04",
+ "games": [
+  {
+   "league": "nba",
+   "espn_id": "401909936",
+   "away": "ORL",
+   "home": "PHX",
+   "date": "2026-11-05",
+   "kickoff": "2026-11-06T02:00:00+00:00",
+   "total": 223.5,
+   "total_open": 224.5,
+   "home_spread": -1.5,
+   "home_spread_open": -1.5,
+   "pred_close_total": 224.41578159077102,
+   "pred_close_spread": -0.7155769142684422
+  },
+  {
+   "league": "nba",
+   "espn_id": "401909937",
+   "away": "MIA",
+   "home": "GSW",
+   "date": "2026-11-05",
+   "kickoff": "2026-11-06T03:00:00+00:00",
+   "total": 235.5,
+   "total_open": 238.5,
+   "home_spread": -7.5,
+   "home_spread_open": -4.5,
+   "pred_close_total": 239.2504006982687,
+   "pred_close_spread": -4.93983096955406
+  }
+ ]
+}
