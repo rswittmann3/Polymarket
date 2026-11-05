@@ -167,9 +167,11 @@ def status(_a) -> None:
                 continue
             time.sleep(2.1)
             b = book_with_retry(http, p["slug"])
-            if not b or not b.open:
-                print(f"  {p['slug']}: book {'missing' if not b else b.state}: market may have resolved, CHECK THE APP; cost ${p['cost']:.3f}")
+            if not b or (not b.open and not (b.bids and b.offers)):
+                print(f"  {p['slug']}: book {'missing' if not b else b.state} and empty: market may have resolved, CHECK THE APP; cost ${p['cost']:.3f}")
                 continue
+            if not b.open:      # HALTED etc. with a visible book: usually an exchange-wide pause, not a resolution. Mark to the stale book.
+                print(f"  (state {b.state}: book frozen, marking to the last quotes)")
             no_bid = 1 - b.offers[0][0] if b.offers else None     # what we could sell NO for right now
             val = p["qty"] * no_bid if no_bid is not None else 0.0
             tot_cost += p["cost"]
