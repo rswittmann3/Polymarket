@@ -1,0 +1,90 @@
+{
+ "saved_at": "2026-11-10T13:22:52+00:00",
+ "history_through": "2026-11-09",
+ "games": [
+  {
+   "league": "nba",
+   "espn_id": "401909960",
+   "away": "MIL",
+   "home": "NYK",
+   "date": "2026-11-10",
+   "kickoff": "2026-11-11T00:30:00+00:00",
+   "total": 220.5,
+   "total_open": 219.5,
+   "home_spread": -15.5,
+   "home_spread_open": -15.5,
+   "pred_close_total": 219.29881729908152,
+   "pred_close_spread": -15.741878700284175
+  },
+  {
+   "league": "nba",
+   "espn_id": "401909961",
+   "away": "BOS",
+   "home": "PHI",
+   "date": "2026-11-10",
+   "kickoff": "2026-11-11T01:00:00+00:00",
+   "total": 218.5,
+   "total_open": 214.5,
+   "home_spread": 1.5,
+   "home_spread_open": 1.5,
+   "pred_close_total": 214.52858455558734,
+   "pred_close_spread": 2.122308825378189
+  },
+  {
+   "league": "nba",
+   "espn_id": "401909962",
+   "away": "LAC",
+   "home": "PHX",
+   "date": "2026-11-10",
+   "kickoff": "2026-11-11T02:00:00+00:00",
+   "total": 224.5,
+   "total_open": 225.5,
+   "home_spread": -3.5,
+   "home_spread_open": -4.5,
+   "pred_close_total": 225.819715636966,
+   "pred_close_spread": -3.440754549614087
+  },
+  {
+   "league": "nba",
+   "espn_id": "401909963",
+   "away": "MIA",
+   "home": "UTA",
+   "date": "2026-11-10",
+   "kickoff": "2026-11-11T02:00:00+00:00",
+   "total": 227.5,
+   "total_open": 227.5,
+   "home_spread": 9.5,
+   "home_spread_open": 10.5,
+   "pred_close_total": 228.50518180720226,
+   "pred_close_spread": 10.743172481994014
+  },
+  {
+   "league": "nba",
+   "espn_id": "401909964",
+   "away": "ORL",
+   "home": "SAC",
+   "date": "2026-11-10",
+   "kickoff": "2026-11-11T03:00:00+00:00",
+   "total": 222.5,
+   "total_open": 221.5,
+   "home_spread": 6.5,
+   "home_spread_open": 5.5,
+   "pred_close_total": 222.06346664106945,
+   "pred_close_spread": 5.741434980159397
+  },
+  {
+   "league": "nba",
+   "espn_id": "401909965",
+   "away": "OKC",
+   "home": "POR",
+   "date": "2026-11-10",
+   "kickoff": "2026-11-11T04:00:00+00:00",
+   "total": 226.5,
+   "total_open": 226.5,
+   "home_spread": 1.5,
+   "home_spread_open": 1.5,
+   "pred_close_total": 226.01838536431012,
+   "pred_close_spread": 1.9444852051474792
+  }
+ ]
+}
