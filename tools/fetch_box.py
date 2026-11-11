@@ -4,7 +4,7 @@ Game ids come from the scoreboard days already cached by fetch_history (data/his
 into a small JSON file under data/history/box/raw/<id>.json, so an interrupted run resumes where it stopped. `--combine` (also run at
 the end) writes data/history/box/team_box.pkl and player_box.pkl.
 
-    python tools/fetch_box.py                 # fetch everything missing, then combine
+    python tools/fetch_box.py                 # fetch everything missing (plus the last 6 days straight from ESPN), then combine
     python tools/fetch_box.py --limit 50      # try a handful first
     python tools/fetch_box.py --combine       # only rebuild the two tables from the per-game files
 """
@@ -66,6 +66,27 @@ def gap_ids(start: str = "2020-10-16", end: str = "2022-09-30") -> list[dict]:
                 out[e["id"]] = {"id": e["id"], "date": e["date"][:10], "season": e["season"]["year"], "stype": e["season"]["type"],
                                 "teams": [{"homeAway": c["homeAway"], "abbr": c["team"]["abbreviation"]} for c in comp["competitors"]]}
     cache.write_text(json.dumps(list(out.values())))
+    return list(out.values())
+
+
+def recent_ids(days: int = 6) -> list[dict]:
+    """Finished games from the last `days` ET scoreboard days, read straight from ESPN (not cached), so daily runs pick up new games without fetch_history."""
+    from datetime import datetime, timedelta, timezone
+    today = (datetime.now(timezone.utc) - timedelta(hours=5)).date()
+    out = {}
+    with httpx.Client(headers={"User-Agent": "Mozilla/5.0 (research; pm_edges)"}) as c:
+        for k in range(days + 1):
+            day = today - timedelta(days=k)
+            try:
+                r = c.get("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard", params={"dates": f"{day:%Y%m%d}", "limit": 100}, timeout=40)
+                evs = r.json().get("events", []) if r.status_code == 200 else []
+            except (httpx.HTTPError, ValueError):
+                evs = []
+            for e in evs:
+                comp = e["competitions"][0]
+                if comp["status"]["type"]["name"] == "STATUS_FINAL" and e["season"]["type"] in (2, 3, 4, 5):
+                    out[e["id"]] = {"id": e["id"], "date": e["date"][:10], "season": e["season"]["year"], "stype": e["season"]["type"],
+                                    "teams": [{"homeAway": x["homeAway"], "abbr": x["team"]["abbreviation"]} for x in comp["competitors"]]}
     return list(out.values())
 
 
@@ -165,7 +186,9 @@ def main() -> None:
         combine()
         return
     have = {g["id"] for g in game_ids()}
-    games = [g for g in game_ids() + [x for x in gap_ids() if x["id"] not in have] if not (OUT / "raw" / f"{g['id']}.json").exists()]
+    extra = [x for x in gap_ids() + recent_ids() if x["id"] not in have]
+    seen = set()
+    games = [g for g in game_ids() + extra if g["id"] not in seen and not seen.add(g["id"]) and not (OUT / "raw" / f"{g['id']}.json").exists()]
     if a.limit:
         games = games[: a.limit]
     print(f"{len(games)} games to fetch", flush=True)

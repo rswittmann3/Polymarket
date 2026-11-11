@@ -133,6 +133,9 @@ def main() -> None:
     if not quotes:
         raise SystemExit("no upcoming prop quotes in data/props")
     p = NP.load_player_rows()
+    age = (pd.Timestamp(datetime.now(timezone.utc).date()) - p.date.max()).days
+    if age > 2:
+        print(f"WARNING: player box scores end {p.date.max().date()} ({age} days old): run `python tools/fetch_box.py` first, form features are stale")
     today = pd.Timestamp(datetime.now(timezone.utc).date())
     pp, unmatched, out_set = build_rows(quotes, p, today)
     d = NP.player_frame(pp)
