@@ -150,11 +150,12 @@ def main() -> None:
         if q.get("pid") not in key.index:
             continue
         r = key.loc[[q["pid"]]].iloc[0] if isinstance(key.loc[q["pid"]], pd.DataFrame) else key.loc[q["pid"]]
-        mu = float(r[f"mu_{q['stat']}"]); po = float(NP.p_over(mu, tr["alpha"][q["stat"]], q["line"]))
+        mu = float(r[f"mu_{q['stat']}"]); p_raw = float(NP.p_over(mu, tr["alpha"][q["stat"]], q["line"]))
+        po = float(tr["iso"][q["stat"]].predict([p_raw])[0])
         ask_o = None if q["bid_under"] is None else 1 - q["bid_under"]; ask_u = None if q["bid_over"] is None else 1 - q["bid_over"]
         two = q["bid_over"] is not None and q["bid_under"] is not None
         rows.append({**{k: q[k] for k in ("market", "event", "type", "stat", "player", "pid", "team", "line", "start", "quote_ts", "bid_over", "bid_under", "qty_over", "qty_under")},
-                     "mu": round(mu, 3), "p_over": round(po, 4), "alpha": round(tr["alpha"][q["stat"]], 4),
+                     "mu": round(mu, 3), "p_over": round(po, 4), "p_raw": round(p_raw, 4), "alpha": round(tr["alpha"][q["stat"]], 4),
                      "mid_over": round((q["bid_over"] + 1 - q["bid_under"]) / 2, 4) if two else None,
                      "ask_over": ask_o, "ask_under": ask_u,
                      "edge_over": None if ask_o is None else round(po - ask_o, 4), "edge_under": None if ask_u is None else round(1 - po - ask_u, 4),

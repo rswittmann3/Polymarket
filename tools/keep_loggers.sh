@@ -24,6 +24,7 @@ fi
 if [ "$(date -u +%H)" = "21" ]; then   # late prop freeze, ~90 min before the first tip (the 13:13 daily run makes the early one)
   python tools/freeze_props.py >> data/props/freeze.log 2>&1 || echo "freeze_props failed (see data/props/freeze.log)"
 fi
+python research/novig/01_ladder_arb_scan.py 2>&1 | sed -n '1,2p' | tr '\n' ' ' | sed "s/^/$(date -u +%FT%TZ) /" >> data/props/arb_scan.log; echo >> data/props/arb_scan.log   # model-free crossed-ladder count, accumulates evidence
 python tools/sync_lag_data.py save >/dev/null 2>&1
 cp -u data/novig/touch_*.jsonl.gz data/novig/meta_*.jsonl.gz snapshots/novig/ 2>/dev/null
 cp -u data/props/touch_*.jsonl.gz data/props/meta_*.jsonl.gz snapshots/props/ 2>/dev/null

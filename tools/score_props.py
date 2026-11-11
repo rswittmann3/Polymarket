@@ -101,9 +101,14 @@ def cluster_se(x: pd.Series, groups: pd.Series) -> float:
     return float(np.sqrt((d ** 2).sum()) / len(x))
 
 
+MAX_WIDTH = 0.08            # a mid is only informative when the market is tight (a 60pp-wide market's "mid" is noise and flatters any model)
+
+
 def summarize(df: pd.DataFrame, label: str) -> dict:
     out = {"which": label, "markets": int(len(df))}
-    two = df[df.mid_over.notna()]
+    df = df.assign(width=1 - df.bid_over - df.bid_under)
+    out["two_sided_any_width"] = int(df.mid_over.notna().sum())
+    two = df[df.mid_over.notna() & (df.width <= MAX_WIDTH)]
     out["two_sided"] = int(len(two))
     if len(two):
         bm = ((two.mid_over - two.over) ** 2).mean(); bp = ((two.p_over - two.over) ** 2).mean()

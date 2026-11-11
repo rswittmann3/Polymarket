@@ -60,8 +60,30 @@ def test_summarize_brier_and_bets():
     df = pd.DataFrame({"event": ["e1", "e1", "e2", "e2"], "player": list("abcd"), "stat": "pts", "line": 10.5,
                        "p_over": [0.8, 0.2, 0.7, 0.3], "mid_over": [0.5, 0.5, 0.5, 0.5], "over": [1.0, 0.0, 1.0, 0.0],
                        "edge_over": [0.25, -0.35, 0.15, -0.25], "edge_under": [-0.35, 0.25, -0.25, 0.15],
-                       "ask_over": [0.55, 0.55, 0.55, 0.55], "ask_under": [0.55, 0.55, 0.55, 0.55], "close_mid": [0.6, 0.4, 0.55, 0.45]})
+                       "ask_over": [0.55, 0.55, 0.55, 0.55], "ask_under": [0.55, 0.55, 0.55, 0.55], "close_mid": [0.6, 0.4, 0.55, 0.45],
+                       "bid_over": [0.48, 0.48, 0.48, 0.48], "bid_under": [0.48, 0.48, 0.48, 0.48]})
     r = SP.summarize(df, "t")
     assert r["brier_gain"] > 0 and r["bets_edge10"]["n"] == 4 and r["bets_edge10"]["win_rate"] == 1.0
     assert abs(r["bets_edge10"]["mean_gain_prob_pts"] - 0.45) < 1e-9
     assert r["close_moved_toward_model"]["mean"] > 0
+
+
+def test_isotonic_calibrator_is_monotone_bounded_and_beats_raw_when_tails_are_thin():
+    rng = np.random.default_rng(3)
+    mu = rng.uniform(4, 25, 20000); alpha_true = 0.25
+    y = rng.negative_binomial(1 / alpha_true, (1 / alpha_true) / (1 / alpha_true + mu))
+    iso = NP.fit_iso(mu, y, 0.02)                                 # deliberately too-thin tails
+    grid = np.linspace(0.0, 1.0, 60)
+    cal = iso.predict(grid)
+    assert (np.diff(cal) >= -1e-12).all() and cal.min() >= 0.01 and cal.max() <= 0.99
+    assert abs(iso.predict([iso.lo / 2])[0] - max(0.01, iso.lo / 2)) < 1e-9        # outside the fitted support the raw probability is kept
+    p, o = NP.lines_probs(mu, y, 0.02)
+    assert np.mean((iso.predict(p) - o) ** 2) < np.mean((p - o) ** 2)
+
+
+def test_summarize_ignores_mid_of_wide_markets():
+    df = pd.DataFrame({"event": ["e1", "e1"], "player": list("ab"), "stat": "pts", "line": 10.5, "p_over": [0.8, 0.8], "mid_over": [0.5, 0.5], "over": [1.0, 1.0],
+                       "edge_over": [0.1, 0.1], "edge_under": [-0.1, -0.1], "ask_over": [0.7, 0.7], "ask_under": [0.3, 0.3], "close_mid": [0.5, 0.5],
+                       "bid_over": [0.05, 0.48], "bid_under": [0.05, 0.48]})                       # first market is 90pp wide, second is 4pp wide
+    r = SP.summarize(df, "t")
+    assert r["two_sided_any_width"] == 2 and r["two_sided"] == 1

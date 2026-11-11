@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 import numpy as np
 import pandas as pd
 
-STATS = ["min", "pts", "reb", "ast", "tpm", "stl", "blk"]
+STATS = ["min", "pts", "reb", "ast", "tpm", "stl", "blk", "fga", "fta", "tpa", "tov"]
 FIX = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "UTAH": "UTA", "WSH": "WAS"}
 
 
@@ -129,6 +129,8 @@ def ratio_cols(d: pd.DataFrame) -> pd.DataFrame:
     r = pd.DataFrame(index=d.index)
     for s in STATS:
         r[f"r_{s}_6v20"] = d[f"f_{s}_6"] / d[f"f_{s}_20"].clip(lower=0.3)
+    for s in ("fga", "fta", "tpa", "ast", "reb", "pts", "tov"):                      # per-minute usage rates (scale-free)
+        r[f"u_{s}"] = d[f"f_{s}_20"] / d.f_min_20.clip(lower=5)
     r["f_min_20"] = d.f_min_20; r["f_start_5"] = d.f_start_5; r["f_rest"] = d.f_rest; r["f_min_sd"] = d.f_min_sd; r["f_games"] = d.f_games.clip(upper=200)
     for c in ABS:
         r[c] = d[c]
@@ -160,13 +162,44 @@ def p_over(mu, alpha: float, line: float):
     return 1.0 - nbinom.cdf(k, r, r / (r + mu))
 
 
-def train_all(d: pd.DataFrame, holdout_days: int = 75):
-    """Fit one model per stat on everything, plus alpha from a model trained before the last `holdout_days` and scored on them."""
+def lines_probs(mu, y, alpha: float, offs=(-0.7, -0.5, -0.35, -0.2, -0.1, 0.0, 0.1, 0.2, 0.35, 0.5, 0.7, 1.0)):
+    """Raw P(over) and outcomes for half-point lines placed around each prediction (as a market would post them)."""
+    P, O = [], []
+    for off in offs:
+        line = np.floor(mu * (1 + off)) + 0.5
+        P.append(np.array([p_over(mu[i], alpha, line[i]) for i in range(len(mu))])); O.append((np.asarray(y) > line).astype(float))
+    return np.concatenate(P), np.concatenate(O)
+
+
+class Calibrator:
+    """Isotonic map raw NB P(over) -> realised frequency, valid only inside the raw-probability range seen in the fit; outside it the raw value is kept
+    (scikit-learn's isotonic regression returns junk beyond its support). Output is clipped to [0.01, 0.99]."""
+
+    def __init__(self, iso, lo: float, hi: float):
+        self.iso, self.lo, self.hi = iso, lo, hi
+
+    def predict(self, p):
+        p = np.asarray(p, float)
+        out = np.where((p >= self.lo) & (p <= self.hi), self.iso.predict(np.clip(p, self.lo, self.hi)), p)
+        return np.clip(out, 0.01, 0.99)
+
+
+def fit_iso(mu, y, alpha: float) -> Calibrator:
+    from sklearn.isotonic import IsotonicRegression
+    p, o = lines_probs(mu, y, alpha)
+    iso = IsotonicRegression(y_min=0.005, y_max=0.995, out_of_bounds="clip").fit(p, o)
+    return Calibrator(iso, float(np.quantile(p, 0.005)), float(np.quantile(p, 0.995)))
+
+
+def train_all(d: pd.DataFrame, holdout_days: int = 300):
+    """Fit one model per stat on everything, plus alpha and an isotonic calibrator from a model trained before the last `holdout_days` and scored on them."""
     cols = feature_cols(d); cut = d.date.max() - pd.Timedelta(days=holdout_days)
     old, new = d[d.date <= cut], d[d.date > cut]
-    out = {"cols": cols, "models": {}, "alpha": {}}
+    out = {"cols": cols, "models": {}, "alpha": {}, "iso": {}}
     for stat in TARGETS:
         m_old = fit_stat(old, stat, cols)
-        out["alpha"][stat] = fit_alpha(target_series(new, stat).values, predict_mean(m_old, new, stat))
+        mu_new, y_new = predict_mean(m_old, new, stat), target_series(new, stat).values
+        out["alpha"][stat] = fit_alpha(y_new, mu_new)
+        out["iso"][stat] = fit_iso(mu_new, y_new, out["alpha"][stat])
         out["models"][stat] = fit_stat(d, stat, cols)
     return out
