@@ -21,10 +21,13 @@ if ! pgrep -f "tools/line_poller.py" >/dev/null; then
   setsid -f nohup env -u ODDS_API_KEY python tools/line_poller.py --hours 36 --every 3 >> data/lag/poller.log 2>&1 < /dev/null
   started="$started line_poller"
 fi
+if [ "$(date -u +%H)" = "21" ]; then   # late prop freeze, ~90 min before the first tip (the 13:13 daily run makes the early one)
+  python tools/freeze_props.py >> data/props/freeze.log 2>&1 || echo "freeze_props failed (see data/props/freeze.log)"
+fi
 python tools/sync_lag_data.py save >/dev/null 2>&1
 cp -u data/novig/touch_*.jsonl.gz data/novig/meta_*.jsonl.gz snapshots/novig/ 2>/dev/null
 cp -u data/props/touch_*.jsonl.gz data/props/meta_*.jsonl.gz snapshots/props/ 2>/dev/null
-git add snapshots/lag/timeline.jsonl.gz snapshots/novig snapshots/props 2>/dev/null
+git add snapshots/lag/timeline.jsonl.gz snapshots/novig snapshots/props snapshots/props_frozen 2>/dev/null
 if ! git diff --cached --quiet; then
   git commit -q -m "Save quote and injury logs ($(date -u +%Y-%m-%dT%H:%MZ))
 
