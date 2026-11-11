@@ -24,6 +24,22 @@ from pm_edges import slate as S
 from pm_edges.trends import history_frames
 
 
+def big_move_flags(games: list[dict], threshold: float = 2.0) -> list[dict]:
+    """Games where the model's predicted closing spread is at least `threshold` points from the line now.
+    The side is the one whose number is better than the predicted close: a higher predicted home spread means the home team
+    will be giving fewer points, so the away team's current number is the one to hold."""
+    out = []
+    for g in games:
+        if g.get("pred_close_spread") is None or g.get("home_spread") is None:
+            continue
+        move = g["pred_close_spread"] - g["home_spread"]
+        if abs(move) >= threshold:
+            side = "AWAY" if move > 0 else "HOME"
+            line = -g["home_spread"] if move > 0 else g["home_spread"]
+            out.append({"game": f"{g['away']}@{g['home']}", "side": side, "line": line, "predicted_move": round(move, 2)})
+    return out
+
+
 def freeze(data_dir: Path, out_dir: Path, days: int = 2, now: datetime | None = None, refresh: bool = True) -> Path | None:
     warnings.filterwarnings("ignore")
     now = now or datetime.now(timezone.utc)
@@ -68,3 +84,6 @@ if __name__ == "__main__":
     a = ap.parse_args()
     p = freeze(a.data_dir, a.out, a.days, refresh=not a.no_refresh)
     print(f"froze {len(json.loads(p.read_text())['games'])} games: {p}" if p else "no upcoming games with opening lines")
+    if p:
+        for f in big_move_flags(json.loads(p.read_text())["games"]):
+            print(f"BIG-MOVE FLAG: {f['game']}: hold {f['side']} {f['line']:+g} (model expects the spread to move {f['predicted_move']:+.1f})")

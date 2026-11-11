@@ -81,3 +81,28 @@ def test_pooled_reports_the_games_frozen_after_the_history_refresh_separately(tm
     out = m.pooled(sorted(tmp_path.glob("nba_*.json")), now=NOW, get=lambda url, params=None: {"items": [item]})["total"]
     assert out["games"] == 2 and out["fresh_only"]["games"] == 1
     assert out["fresh_only"]["from_open"]["mean_clv_points"] == pytest.approx(-3.0)      # predicted a fall, the line rose 3
+
+
+def test_forward_rule_counts_only_games_from_the_start_date_and_big_predicted_moves():
+    m = _mod()
+    rows = [{"game": "A@B", "date": "2026-11-10", "then": -3.0, "pred": -6.0, "close": -7.0},      # before the start date: ignored
+            {"game": "C@D", "date": "2026-11-11", "then": -3.0, "pred": -5.5, "close": -6.0},      # predicted -2.5, moved -3: +3
+            {"game": "E@F", "date": "2026-11-12", "then": 4.0, "pred": 6.5, "close": 3.0},         # predicted +2.5, moved -1: -1
+            {"game": "G@H", "date": "2026-11-12", "then": 1.0, "pred": 2.0, "close": 4.0}]         # small prediction: ignored
+    r = m.big_spread_rule(rows)
+    assert r["games"] == 2 and r["gained"] == 1 and r["lost"] == 1 and r["flat"] == 0
+    assert r["mean_gain_points"] == pytest.approx(1.0)
+    assert m.big_spread_rule([])["games"] == 0
+
+
+def test_big_move_flags_name_the_side_with_the_better_number():
+    spec = importlib.util.spec_from_file_location("freeze_predictions", Path(__file__).parent.parent / "tools" / "freeze_predictions.py")
+    src = (Path(__file__).parent.parent / "tools" / "freeze_predictions.py").read_text()
+    ns: dict = {}
+    exec(src[src.index("def big_move_flags"):src.index("def freeze(")], ns)
+    games = [{"away": "A", "home": "B", "home_spread": -6.5, "pred_close_spread": -3.5},       # home expected to lay fewer: hold away +6.5
+             {"away": "C", "home": "D", "home_spread": -3.5, "pred_close_spread": -6.0},       # home expected to lay more: hold home -3.5
+             {"away": "E", "home": "F", "home_spread": 2.0, "pred_close_spread": 3.5},         # below the threshold
+             {"away": "G", "home": "H", "home_spread": None, "pred_close_spread": 1.0}]
+    out = ns["big_move_flags"](games)
+    assert [(f["game"], f["side"], f["line"]) for f in out] == [("A@B", "AWAY", 6.5), ("C@D", "HOME", -3.5)]

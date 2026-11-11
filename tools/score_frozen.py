@@ -21,6 +21,12 @@ import numpy as np
 
 DATA = Path("data/lag/timeline.jsonl")
 
+# One rule, fixed on 2026-11-11 after the first 21 big-prediction games looked good: on the spread, trade toward the model when it
+# predicts a close at least RULE_THRESHOLD points from the line at freeze time. Only games dated RULE_START or later count, because
+# the threshold was picked after seeing the earlier games. Everything before that date is in-sample.
+RULE_START = "2026-11-11"
+RULE_THRESHOLD = 2.0
+
 
 def closing_lines(path: Path = DATA) -> dict[tuple, dict]:
     """{(away, home): {"pin_total", "pin_spread", "dk_total", "dk_spread", "tip"}} from the last row before tip."""
@@ -147,6 +153,18 @@ def _stat(rs: list[dict]) -> dict:
     return stat
 
 
+def big_spread_rule(rows: list[dict], start: str = RULE_START, threshold: float = RULE_THRESHOLD) -> dict:
+    """Forward-only scorecard for the pre-registered rule. `rows` are the pooled spread detail rows (game, date, then, pred, close)."""
+    sel = [r for r in rows if str(r["date"]) >= start and abs(r["pred"] - r["then"]) >= threshold]
+    gains = np.array([np.sign(r["pred"] - r["then"]) * (r["close"] - r["then"]) for r in sel])
+    out = {"rule": f"spread: |predicted close - line at freeze| >= {threshold}", "start": start, "games": len(sel)}
+    if len(sel):
+        out.update({"mean_gain_points": float(gains.mean()), "se": float(gains.std(ddof=1) / math.sqrt(len(sel))) if len(sel) > 1 else None,
+                    "gained": int((gains > 0).sum()), "lost": int((gains < 0).sum()), "flat": int((gains == 0).sum()),
+                    "detail": [{**r, "gain": float(g)} for r, g in zip(sel, gains)]})
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("frozen", type=Path, nargs="?", help="a snapshots/frozen/nba_*.json file (default: all, newest first)")
@@ -157,6 +175,9 @@ def main() -> None:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(res, indent=1))
     print(json.dumps({k: {x: y for x, y in v.items() if x != "detail"} for k, v in res.items()}, indent=1))
+    rule = big_spread_rule(res.get("spread", {}).get("detail", []))
+    (a.out.parent / "rule_big_spread.json").write_text(json.dumps(rule, indent=1))
+    print("\nFORWARD RULE (since %s): %s" % (rule["start"], json.dumps({k: v for k, v in rule.items() if k != "detail"})))
 
 
 if __name__ == "__main__":
