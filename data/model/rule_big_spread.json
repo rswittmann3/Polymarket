@@ -1,0 +1,23 @@
+{
+ "rule": "spread: |predicted close - line at freeze| >= 2.0",
+ "start": "2026-11-11",
+ "games": 1,
+ "mean_gain_points": 1.0,
+ "se": null,
+ "gained": 1,
+ "lost": 0,
+ "flat": 0,
+ "detail": [
+  {
+   "game": "WAS@IND",
+   "date": "2026-11-11",
+   "open": -4.5,
+   "then": -2.5,
+   "pred": -4.511829512377644,
+   "close": -3.5,
+   "frozen": "nba_20261111T1318Z.json",
+   "fresh": true,
+   "gain": 1.0
+  }
+ ]
+}

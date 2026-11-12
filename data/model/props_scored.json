@@ -1,0 +1,114 @@
+{
+ "early": {
+  "which": "early",
+  "markets": 3054,
+  "two_sided_any_width": 2935,
+  "two_sided": 1084,
+  "brier_market": 0.202,
+  "brier_model": 0.2088,
+  "brier_gain": -0.0068,
+  "brier_gain_se": 0.0052,
+  "vs_mid_gap3": {
+   "n": 707,
+   "mean_result_minus_mid_toward_model": 0.0161,
+   "se": 0.0214
+  },
+  "vs_mid_gap6": {
+   "n": 447,
+   "mean_result_minus_mid_toward_model": 0.0378,
+   "se": 0.0321
+  },
+  "vs_mid_gap10": {
+   "n": 238,
+   "mean_result_minus_mid_toward_model": -0.0195,
+   "se": 0.0528
+  },
+  "bets_edge5": {
+   "n": 577,
+   "win_rate": 0.501,
+   "avg_ask": 0.513,
+   "mean_gain_prob_pts": -0.0118,
+   "se": 0.0411,
+   "roi": -0.023
+  },
+  "bets_edge10": {
+   "n": 245,
+   "win_rate": 0.424,
+   "avg_ask": 0.512,
+   "mean_gain_prob_pts": -0.088,
+   "se": 0.0644,
+   "roi": -0.1716
+  },
+  "bets_edge15": {
+   "n": 94,
+   "win_rate": 0.394,
+   "avg_ask": 0.509,
+   "mean_gain_prob_pts": -0.1155,
+   "se": 0.1028,
+   "roi": -0.2268
+  },
+  "close_moved_toward_model": {
+   "n": 2799,
+   "mean": 0.0061,
+   "se": 0.0021
+  }
+ },
+ "late": {
+  "which": "late",
+  "markets": 3054,
+  "two_sided_any_width": 2997,
+  "two_sided": 1756,
+  "brier_market": 0.1994,
+  "brier_model": 0.2046,
+  "brier_gain": -0.0052,
+  "brier_gain_se": 0.0051,
+  "vs_mid_gap3": {
+   "n": 1170,
+   "mean_result_minus_mid_toward_model": 0.0348,
+   "se": 0.02
+  },
+  "vs_mid_gap6": {
+   "n": 726,
+   "mean_result_minus_mid_toward_model": 0.0332,
+   "se": 0.0344
+  },
+  "vs_mid_gap10": {
+   "n": 370,
+   "mean_result_minus_mid_toward_model": 0.0053,
+   "se": 0.0467
+  },
+  "bets_edge5": {
+   "n": 805,
+   "win_rate": 0.447,
+   "avg_ask": 0.475,
+   "mean_gain_prob_pts": -0.028,
+   "se": 0.0403,
+   "roi": -0.059
+  },
+  "bets_edge10": {
+   "n": 346,
+   "win_rate": 0.419,
+   "avg_ask": 0.481,
+   "mean_gain_prob_pts": -0.0621,
+   "se": 0.0598,
+   "roi": -0.129
+  },
+  "bets_edge15": {
+   "n": 145,
+   "win_rate": 0.414,
+   "avg_ask": 0.49,
+   "mean_gain_prob_pts": -0.0758,
+   "se": 0.1114,
+   "roi": -0.1548
+  },
+  "close_moved_toward_model": {
+   "n": 2861,
+   "mean": 0.0012,
+   "se": 0.0015
+  }
+ },
+ "scored_at": "2026-11-12T13:19:59+00:00",
+ "freeze_days": [
+  "2026-11-11"
+ ]
+}
