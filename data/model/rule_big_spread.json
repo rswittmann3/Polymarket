@@ -1,12 +1,12 @@
 {
  "rule": "spread: |predicted close - line at freeze| >= 2.0",
  "start": "2026-11-11",
- "games": 1,
- "mean_gain_points": 1.0,
- "se": null,
- "gained": 1,
+ "games": 3,
+ "mean_gain_points": 0.6666666666666666,
+ "se": 0.33333333333333337,
+ "gained": 2,
  "lost": 0,
- "flat": 0,
+ "flat": 1,
  "detail": [
   {
    "game": "WAS@IND",
@@ -16,6 +16,28 @@
    "pred": -4.511829512377644,
    "close": -3.5,
    "frozen": "nba_20261111T1318Z.json",
+   "fresh": true,
+   "gain": 1.0
+  },
+  {
+   "game": "NYK@IND",
+   "date": "2026-11-13",
+   "open": 2.5,
+   "then": 8.5,
+   "pred": 3.1062416010315,
+   "close": 8.5,
+   "frozen": "nba_20261113T1422Z.json",
+   "fresh": true,
+   "gain": -0.0
+  },
+  {
+   "game": "MEM@NOP",
+   "date": "2026-11-13",
+   "open": 4.5,
+   "then": 2.5,
+   "pred": 4.521562681835711,
+   "close": 3.5,
+   "frozen": "nba_20261113T1422Z.json",
    "fresh": true,
    "gain": 1.0
   }
