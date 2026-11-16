@@ -1,117 +1,118 @@
 {
  "early": {
   "which": "early",
-  "markets": 9507,
-  "two_sided_any_width": 9229,
-  "two_sided": 3694,
-  "brier_market": 0.1934,
-  "brier_model": 0.2008,
-  "brier_gain": -0.0073,
-  "brier_gain_se": 0.0028,
+  "markets": 12494,
+  "two_sided_any_width": 12109,
+  "two_sided": 4975,
+  "brier_market": 0.1952,
+  "brier_model": 0.2039,
+  "brier_gain": -0.0087,
+  "brier_gain_se": 0.0025,
   "vs_mid_gap3": {
-   "n": 2419,
-   "mean_result_minus_mid_toward_model": 0.0117,
-   "se": 0.0156
+   "n": 3256,
+   "mean_result_minus_mid_toward_model": -0.0081,
+   "se": 0.0139
   },
   "vs_mid_gap6": {
-   "n": 1608,
-   "mean_result_minus_mid_toward_model": 0.0078,
-   "se": 0.0203
+   "n": 2133,
+   "mean_result_minus_mid_toward_model": -0.0088,
+   "se": 0.0179
   },
   "vs_mid_gap10": {
-   "n": 914,
-   "mean_result_minus_mid_toward_model": 0.0089,
-   "se": 0.0286
+   "n": 1184,
+   "mean_result_minus_mid_toward_model": -0.0036,
+   "se": 0.0245
   },
   "bets_edge5": {
-   "n": 2032,
-   "win_rate": 0.48,
-   "avg_ask": 0.514,
-   "mean_gain_prob_pts": -0.034,
-   "se": 0.0211,
-   "roi": -0.0661
+   "n": 2660,
+   "win_rate": 0.467,
+   "avg_ask": 0.506,
+   "mean_gain_prob_pts": -0.0396,
+   "se": 0.0186,
+   "roi": -0.0781
   },
   "bets_edge10": {
-   "n": 878,
-   "win_rate": 0.494,
-   "avg_ask": 0.515,
-   "mean_gain_prob_pts": -0.0207,
-   "se": 0.0357,
-   "roi": -0.0401
+   "n": 1138,
+   "win_rate": 0.495,
+   "avg_ask": 0.512,
+   "mean_gain_prob_pts": -0.0174,
+   "se": 0.0309,
+   "roi": -0.034
   },
   "bets_edge15": {
-   "n": 331,
-   "win_rate": 0.477,
-   "avg_ask": 0.51,
-   "mean_gain_prob_pts": -0.0331,
-   "se": 0.0553,
-   "roi": -0.0648
+   "n": 415,
+   "win_rate": 0.499,
+   "avg_ask": 0.512,
+   "mean_gain_prob_pts": -0.0129,
+   "se": 0.0521,
+   "roi": -0.0251
   },
   "close_moved_toward_model": {
-   "n": 8869,
-   "mean": 0.0069,
-   "se": 0.0011
+   "n": 11646,
+   "mean": 0.0072,
+   "se": 0.001
   }
  },
  "late": {
   "which": "late",
-  "markets": 9507,
-  "two_sided_any_width": 9332,
-  "two_sided": 6258,
-  "brier_market": 0.1923,
-  "brier_model": 0.2001,
+  "markets": 12494,
+  "two_sided_any_width": 12247,
+  "two_sided": 8291,
+  "brier_market": 0.1941,
+  "brier_model": 0.2019,
   "brier_gain": -0.0078,
-  "brier_gain_se": 0.0028,
+  "brier_gain_se": 0.0023,
   "vs_mid_gap3": {
-   "n": 4210,
-   "mean_result_minus_mid_toward_model": 0.0055,
-   "se": 0.0152
+   "n": 5545,
+   "mean_result_minus_mid_toward_model": -0.0036,
+   "se": 0.0127
   },
   "vs_mid_gap6": {
-   "n": 2722,
-   "mean_result_minus_mid_toward_model": 0.0053,
-   "se": 0.0201
+   "n": 3567,
+   "mean_result_minus_mid_toward_model": -0.0026,
+   "se": 0.0165
   },
   "vs_mid_gap10": {
-   "n": 1490,
-   "mean_result_minus_mid_toward_model": -0.0041,
-   "se": 0.0247
+   "n": 1903,
+   "mean_result_minus_mid_toward_model": -0.0029,
+   "se": 0.0209
   },
   "bets_edge5": {
-   "n": 2899,
-   "win_rate": 0.447,
-   "avg_ask": 0.483,
-   "mean_gain_prob_pts": -0.0362,
-   "se": 0.0208,
-   "roi": -0.0749
+   "n": 3754,
+   "win_rate": 0.442,
+   "avg_ask": 0.479,
+   "mean_gain_prob_pts": -0.0368,
+   "se": 0.0174,
+   "roi": -0.0767
   },
   "bets_edge10": {
-   "n": 1297,
-   "win_rate": 0.447,
-   "avg_ask": 0.475,
-   "mean_gain_prob_pts": -0.0282,
-   "se": 0.0286,
-   "roi": -0.0593
+   "n": 1653,
+   "win_rate": 0.454,
+   "avg_ask": 0.476,
+   "mean_gain_prob_pts": -0.0217,
+   "se": 0.0237,
+   "roi": -0.0456
   },
   "bets_edge15": {
-   "n": 473,
-   "win_rate": 0.448,
-   "avg_ask": 0.474,
-   "mean_gain_prob_pts": -0.0259,
-   "se": 0.0454,
-   "roi": -0.0547
+   "n": 574,
+   "win_rate": 0.469,
+   "avg_ask": 0.473,
+   "mean_gain_prob_pts": -0.0044,
+   "se": 0.0421,
+   "roi": -0.0093
   },
   "close_moved_toward_model": {
-   "n": 8967,
-   "mean": 0.0022,
-   "se": 0.001
+   "n": 11776,
+   "mean": 0.002,
+   "se": 0.0008
   }
  },
- "scored_at": "2026-11-15T13:16:53+00:00",
+ "scored_at": "2026-11-16T13:23:14+00:00",
  "freeze_days": [
   "2026-11-11",
   "2026-11-12",
   "2026-11-13",
-  "2026-11-14"
+  "2026-11-14",
+  "2026-11-15"
  ]
 }
