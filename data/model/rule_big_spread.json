@@ -1,12 +1,12 @@
 {
  "rule": "spread: |predicted close - line at freeze| >= 2.0",
  "start": "2026-11-11",
- "games": 3,
- "mean_gain_points": 0.6666666666666666,
- "se": 0.33333333333333337,
+ "games": 4,
+ "mean_gain_points": 0.5,
+ "se": 0.28867513459481287,
  "gained": 2,
  "lost": 0,
- "flat": 1,
+ "flat": 2,
  "detail": [
   {
    "game": "WAS@IND",
@@ -40,6 +40,17 @@
    "frozen": "nba_20261113T1422Z.json",
    "fresh": true,
    "gain": 1.0
+  },
+  {
+   "game": "MEM@WAS",
+   "date": "2026-11-16",
+   "open": 6.5,
+   "then": 3.5,
+   "pred": 7.47411330851391,
+   "close": 3.5,
+   "frozen": "nba_20261116T1320Z.json",
+   "fresh": true,
+   "gain": 0.0
   }
  ]
 }

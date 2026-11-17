@@ -1,0 +1,76 @@
+{
+ "saved_at": "2026-11-17T13:18:55+00:00",
+ "history_through": "2026-11-16",
+ "games": [
+  {
+   "league": "nba",
+   "espn_id": "401910002",
+   "away": "NYK",
+   "home": "TOR",
+   "date": "2026-11-17",
+   "kickoff": "2026-11-18T00:30:00+00:00",
+   "total": 216.5,
+   "total_open": 216.5,
+   "home_spread": 2.5,
+   "home_spread_open": 3.5,
+   "pred_close_total": 216.5323238553482,
+   "pred_close_spread": 3.8005223751431236
+  },
+  {
+   "league": "nba",
+   "espn_id": "401910003",
+   "away": "POR",
+   "home": "MIN",
+   "date": "2026-11-17",
+   "kickoff": "2026-11-18T01:00:00+00:00",
+   "total": 227.5,
+   "total_open": 226.5,
+   "home_spread": -2.5,
+   "home_spread_open": -2.5,
+   "pred_close_total": 225.62947077181033,
+   "pred_close_spread": -2.7071468045863574
+  },
+  {
+   "league": "nba",
+   "espn_id": "401910004",
+   "away": "DET",
+   "home": "SAS",
+   "date": "2026-11-17",
+   "kickoff": "2026-11-18T01:00:00+00:00",
+   "total": 222.5,
+   "total_open": 220.5,
+   "home_spread": -9.5,
+   "home_spread_open": -7.5,
+   "pred_close_total": 221.71527194487697,
+   "pred_close_spread": -7.6176817194630795
+  },
+  {
+   "league": "nba",
+   "espn_id": "401910006",
+   "away": "UTA",
+   "home": "LAC",
+   "date": "2026-11-17",
+   "kickoff": "2026-11-18T03:30:00+00:00",
+   "total": 225.5,
+   "total_open": 223.5,
+   "home_spread": -6.5,
+   "home_spread_open": -5.5,
+   "pred_close_total": 224.68286274366938,
+   "pred_close_spread": -5.649752426564258
+  },
+  {
+   "league": "nba",
+   "espn_id": "401910005",
+   "away": "CHA",
+   "home": "LAL",
+   "date": "2026-11-17",
+   "kickoff": "2026-11-18T04:00:00+00:00",
+   "total": 221.5,
+   "total_open": 218.5,
+   "home_spread": -7.5,
+   "home_spread_open": -10.5,
+   "pred_close_total": 219.2455351013276,
+   "pred_close_spread": -10.186152839952962
+  }
+ ]
+}
