@@ -1,12 +1,12 @@
 {
  "rule": "spread: |predicted close - line at freeze| >= 2.0",
  "start": "2026-11-11",
- "games": 4,
- "mean_gain_points": 0.5,
- "se": 0.28867513459481287,
+ "games": 5,
+ "mean_gain_points": 0.4,
+ "se": 0.24494897427831783,
  "gained": 2,
  "lost": 0,
- "flat": 2,
+ "flat": 3,
  "detail": [
   {
    "game": "WAS@IND",
@@ -51,6 +51,17 @@
    "frozen": "nba_20261116T1320Z.json",
    "fresh": true,
    "gain": 0.0
+  },
+  {
+   "game": "CHA@LAL",
+   "date": "2026-11-17",
+   "open": -10.5,
+   "then": -7.5,
+   "pred": -10.186152839952962,
+   "close": -7.5,
+   "frozen": "nba_20261117T1318Z.json",
+   "fresh": true,
+   "gain": -0.0
   }
  ]
 }
